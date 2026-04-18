@@ -7,6 +7,7 @@ use bevy_voxel_world::custom_meshing::CHUNK_SIZE_I;
 use bevy_voxel_world::prelude::*;
 
 use crate::assets::{PrototypeConfig, TemplateAssets};
+use crate::terrain_meshing::build_chunk_mesh;
 use crate::terrain_noise::{BEDROCK_FLOOR_Y, MAX_SURFACE_Y, TerrainColumn, TerrainNoise};
 
 pub const MATERIAL_GRASS: u8 = 0;
@@ -149,6 +150,31 @@ impl VoxelWorldConfig for PrototypeWorld {
             })
         })
     }
+
+    fn chunk_meshing_delegate(
+        &self,
+    ) -> ChunkMeshingDelegate<Self::MaterialIndex, Self::ChunkUserBundle> {
+        let ambient_occlusion = self.config.ambient_occlusion;
+
+        Some(Box::new(
+            move |_pos, _lod, _data_shape, _mesh_shape, _previous| {
+                Box::new(
+                    move |voxels, data_shape, mesh_shape, texture_index_mapper| {
+                        (
+                            build_chunk_mesh(
+                                voxels,
+                                data_shape,
+                                mesh_shape,
+                                texture_index_mapper,
+                                ambient_occlusion,
+                            ),
+                            None,
+                        )
+                    },
+                )
+            },
+        ))
+    }
 }
 
 fn apply_live_prototype_config(
@@ -191,10 +217,11 @@ fn apply_live_prototype_config(
     }
 
     info!(
-        "applied prototype config: seed={}, terrain_period={}, spawn_height_offset={}, texture_layers={}",
+        "applied prototype config: seed={}, terrain_period={}, spawn_height_offset={}, texture_layers={}, ambient_occlusion={}",
         config.world_seed,
         config.terrain_period,
         config.player_spawn_height_offset,
-        config.voxel_texture_layers
+        config.voxel_texture_layers,
+        config.ambient_occlusion
     );
 }

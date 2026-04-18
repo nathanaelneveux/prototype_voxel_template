@@ -36,6 +36,7 @@ pub struct PrototypeConfig {
     pub terrain_period: f32,
     pub player_spawn_height_offset: f32,
     pub voxel_texture_layers: u32,
+    pub ambient_occlusion: bool,
 }
 
 impl Default for PrototypeConfig {
@@ -45,6 +46,7 @@ impl Default for PrototypeConfig {
             terrain_period: 256.0,
             player_spawn_height_offset: 8.0,
             voxel_texture_layers: 4,
+            ambient_occlusion: true,
         }
     }
 }
@@ -68,11 +70,12 @@ fn log_when_template_assets_are_ready(
     };
 
     info!(
-        "template asset support ready: seed={}, terrain_period={}, spawn_height_offset={}, texture_layers={}",
+        "template asset support ready: seed={}, terrain_period={}, spawn_height_offset={}, texture_layers={}, ambient_occlusion={}",
         config.world_seed,
         config.terrain_period,
         config.player_spawn_height_offset,
-        config.voxel_texture_layers
+        config.voxel_texture_layers,
+        config.ambient_occlusion
     );
     *logged = true;
 }

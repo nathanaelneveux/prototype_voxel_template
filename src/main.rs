@@ -2,6 +2,7 @@ mod assets;
 mod chunk_colliders;
 mod player;
 mod terrain;
+mod terrain_meshing;
 mod terrain_noise;
 
 use assets::AssetSupportPlugin;

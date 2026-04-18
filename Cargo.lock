@@ -232,7 +232,7 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "parking_lot",
  "percent-encoding",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
  "x11rb",
 ]
 
@@ -2061,6 +2061,16 @@ checksum = "3c0345520b5aa77d7d154bd578a18e7a974350931b5f41f641a7844e951b978f"
 dependencies = [
  "ilattice",
  "ndcopy",
+ "ndshape",
+]
+
+[[package]]
+name = "block-mesh-bgm"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fdbd34b47a473a5be978bf7cae6da16c57deb36c89693d3e999aa6dd9593895"
+dependencies = [
+ "block-mesh",
  "ndshape",
 ]
 
@@ -5007,7 +5017,10 @@ dependencies = [
  "bevy_common_assets",
  "bevy_enhanced_input",
  "bevy_voxel_world",
+ "block-mesh",
+ "block-mesh-bgm",
  "log",
+ "ndshape",
  "noiz",
  "serde",
  "tracing",
