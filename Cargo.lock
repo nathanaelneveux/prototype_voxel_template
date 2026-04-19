@@ -2066,9 +2066,9 @@ dependencies = [
 
 [[package]]
 name = "block-mesh-bgm"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5fdbd34b47a473a5be978bf7cae6da16c57deb36c89693d3e999aa6dd9593895"
+checksum = "708e32629a5131c11b7e55634f71e9970205acd4c347450f74d2a60a1ac1a969"
 dependencies = [
  "block-mesh",
  "ndshape",
