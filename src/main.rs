@@ -8,11 +8,12 @@ mod terrain_noise;
 use assets::AssetSupportPlugin;
 use avian3d::prelude::*;
 use bevy::asset::AssetMetaCheck;
+use bevy::input::{InputSystems, mouse::AccumulatedMouseMotion};
 use bevy::light::CascadeShadowConfigBuilder;
 use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow, Window};
 use bevy_ahoy::prelude::AhoyPlugins;
-use bevy_enhanced_input::prelude::EnhancedInputPlugin;
+use bevy_enhanced_input::prelude::{EnhancedInputPlugin, EnhancedInputSystems};
 use bevy_inspector_egui::{bevy_egui::EguiPlugin, quick::WorldInspectorPlugin};
 
 use chunk_colliders::ChunkColliderPlugin;
@@ -24,10 +25,14 @@ struct InspectorMode {
     enabled: bool,
 }
 
+#[derive(Resource, Default)]
+struct IgnoreNextLockMouseMotion(bool);
+
 fn main() {
     App::new()
         .insert_resource(ClearColor(Color::srgb(0.53, 0.74, 0.94)))
         .init_resource::<InspectorMode>()
+        .init_resource::<IgnoreNextLockMouseMotion>()
         .add_plugins(DefaultPlugins.set(AssetPlugin {
             meta_check: AssetMetaCheck::Never,
             watch_for_changes_override: Some(true),
@@ -44,6 +49,12 @@ fn main() {
             ChunkColliderPlugin,
             PlayerPlugin,
         ))
+        .add_systems(
+            PreUpdate,
+            suppress_first_lock_mouse_motion
+                .after(InputSystems)
+                .before(EnhancedInputSystems::Prepare),
+        )
         .add_systems(Startup, (setup_lighting, lock_cursor))
         .add_systems(Update, (toggle_inspector_mode, recapture_cursor))
         .run();
@@ -70,32 +81,52 @@ fn setup_lighting(mut commands: Commands) {
     });
 }
 
-fn lock_cursor(mut primary_window: Single<(&mut Window, &mut CursorOptions), With<PrimaryWindow>>) {
+fn lock_cursor(
+    mut ignore_next_lock_mouse_motion: ResMut<IgnoreNextLockMouseMotion>,
+    mut primary_window: Single<(&mut Window, &mut CursorOptions), With<PrimaryWindow>>,
+) {
     let (window, cursor_options) = &mut *primary_window;
-    set_cursor_grab(window, cursor_options, true);
+    set_cursor_grab(
+        window,
+        cursor_options,
+        true,
+        &mut ignore_next_lock_mouse_motion,
+    );
 }
 
 fn toggle_inspector_mode(
     keys: Res<ButtonInput<KeyCode>>,
     mut inspector_mode: ResMut<InspectorMode>,
+    mut ignore_next_lock_mouse_motion: ResMut<IgnoreNextLockMouseMotion>,
     mut primary_window: Single<(&mut Window, &mut CursorOptions), With<PrimaryWindow>>,
 ) {
     if keys.just_pressed(KeyCode::Escape) {
         inspector_mode.enabled = !inspector_mode.enabled;
         let (window, cursor_options) = &mut *primary_window;
-        set_cursor_grab(window, cursor_options, !inspector_mode.enabled);
+        set_cursor_grab(
+            window,
+            cursor_options,
+            !inspector_mode.enabled,
+            &mut ignore_next_lock_mouse_motion,
+        );
     }
 }
 
 fn recapture_cursor(
     buttons: Res<ButtonInput<MouseButton>>,
     inspector_mode: Res<InspectorMode>,
+    mut ignore_next_lock_mouse_motion: ResMut<IgnoreNextLockMouseMotion>,
     mut primary_window: Single<(&mut Window, &mut CursorOptions), With<PrimaryWindow>>,
 ) {
     let (window, cursor_options) = &mut *primary_window;
 
     if !inspector_mode.enabled && buttons.just_pressed(MouseButton::Left) && cursor_options.visible {
-        set_cursor_grab(window, cursor_options, true);
+        set_cursor_grab(
+            window,
+            cursor_options,
+            true,
+            &mut ignore_next_lock_mouse_motion,
+        );
     }
 }
 
@@ -103,9 +134,15 @@ fn inspector_mode_active(inspector_mode: Res<InspectorMode>) -> bool {
     inspector_mode.enabled
 }
 
-fn set_cursor_grab(window: &mut Window, cursor_options: &mut CursorOptions, grab: bool) {
+fn set_cursor_grab(
+    window: &mut Window,
+    cursor_options: &mut CursorOptions,
+    grab: bool,
+    ignore_next_lock_mouse_motion: &mut IgnoreNextLockMouseMotion,
+) {
     if grab {
         center_cursor_in_window(window);
+        ignore_next_lock_mouse_motion.0 = true;
         cursor_options.visible = false;
         cursor_options.grab_mode = CursorGrabMode::Locked;
     } else {
@@ -117,4 +154,14 @@ fn set_cursor_grab(window: &mut Window, cursor_options: &mut CursorOptions, grab
 fn center_cursor_in_window(window: &mut Window) {
     let center = Vec2::new(window.width() * 0.5, window.height() * 0.5);
     window.set_cursor_position(Some(center));
+}
+
+fn suppress_first_lock_mouse_motion(
+    mut ignore_next_lock_mouse_motion: ResMut<IgnoreNextLockMouseMotion>,
+    mut accumulated_mouse_motion: ResMut<AccumulatedMouseMotion>,
+) {
+    if ignore_next_lock_mouse_motion.0 && accumulated_mouse_motion.delta.length_squared() > 0.0 {
+        accumulated_mouse_motion.delta = Vec2::ZERO;
+        ignore_next_lock_mouse_motion.0 = false;
+    }
 }
