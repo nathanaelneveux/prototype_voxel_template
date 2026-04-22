@@ -10,7 +10,7 @@ use avian3d::prelude::*;
 use bevy::asset::AssetMetaCheck;
 use bevy::light::CascadeShadowConfigBuilder;
 use bevy::prelude::*;
-use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow};
+use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow, Window};
 use bevy_ahoy::prelude::AhoyPlugins;
 use bevy_enhanced_input::prelude::EnhancedInputPlugin;
 use bevy_inspector_egui::{bevy_egui::EguiPlugin, quick::WorldInspectorPlugin};
@@ -70,29 +70,32 @@ fn setup_lighting(mut commands: Commands) {
     });
 }
 
-fn lock_cursor(mut cursor_options: Single<&mut CursorOptions, With<PrimaryWindow>>) {
-    set_cursor_grab(&mut cursor_options, true);
+fn lock_cursor(mut primary_window: Single<(&mut Window, &mut CursorOptions), With<PrimaryWindow>>) {
+    let (window, cursor_options) = &mut *primary_window;
+    set_cursor_grab(window, cursor_options, true);
 }
 
 fn toggle_inspector_mode(
     keys: Res<ButtonInput<KeyCode>>,
     mut inspector_mode: ResMut<InspectorMode>,
-    mut cursor_options: Single<&mut CursorOptions, With<PrimaryWindow>>,
+    mut primary_window: Single<(&mut Window, &mut CursorOptions), With<PrimaryWindow>>,
 ) {
     if keys.just_pressed(KeyCode::Escape) {
         inspector_mode.enabled = !inspector_mode.enabled;
-        set_cursor_grab(&mut cursor_options, !inspector_mode.enabled);
+        let (window, cursor_options) = &mut *primary_window;
+        set_cursor_grab(window, cursor_options, !inspector_mode.enabled);
     }
 }
 
 fn recapture_cursor(
     buttons: Res<ButtonInput<MouseButton>>,
     inspector_mode: Res<InspectorMode>,
-    mut cursor_options: Single<&mut CursorOptions, With<PrimaryWindow>>,
+    mut primary_window: Single<(&mut Window, &mut CursorOptions), With<PrimaryWindow>>,
 ) {
-    if !inspector_mode.enabled && buttons.just_pressed(MouseButton::Left) && cursor_options.visible
-    {
-        set_cursor_grab(&mut cursor_options, true);
+    let (window, cursor_options) = &mut *primary_window;
+
+    if !inspector_mode.enabled && buttons.just_pressed(MouseButton::Left) && cursor_options.visible {
+        set_cursor_grab(window, cursor_options, true);
     }
 }
 
@@ -100,12 +103,18 @@ fn inspector_mode_active(inspector_mode: Res<InspectorMode>) -> bool {
     inspector_mode.enabled
 }
 
-fn set_cursor_grab(cursor_options: &mut CursorOptions, grab: bool) {
+fn set_cursor_grab(window: &mut Window, cursor_options: &mut CursorOptions, grab: bool) {
     if grab {
+        center_cursor_in_window(window);
         cursor_options.visible = false;
         cursor_options.grab_mode = CursorGrabMode::Locked;
     } else {
         cursor_options.visible = true;
         cursor_options.grab_mode = CursorGrabMode::None;
     }
+}
+
+fn center_cursor_in_window(window: &mut Window) {
+    let center = Vec2::new(window.width() * 0.5, window.height() * 0.5);
+    window.set_cursor_position(Some(center));
 }
