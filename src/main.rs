@@ -26,13 +26,28 @@ struct InspectorMode {
 }
 
 #[derive(Resource, Default)]
-struct IgnoreNextLockMouseMotion(bool);
+struct CursorLockState {
+    ignore_next_motion: bool,
+}
+
+impl CursorLockState {
+    fn arm_motion_suppression(&mut self) {
+        self.ignore_next_motion = true;
+    }
+
+    fn suppress_motion(&mut self, accumulated_mouse_motion: &mut AccumulatedMouseMotion) {
+        if self.ignore_next_motion && accumulated_mouse_motion.delta.length_squared() > 0.0 {
+            accumulated_mouse_motion.delta = Vec2::ZERO;
+            self.ignore_next_motion = false;
+        }
+    }
+}
 
 fn main() {
     App::new()
         .insert_resource(ClearColor(Color::srgb(0.53, 0.74, 0.94)))
         .init_resource::<InspectorMode>()
-        .init_resource::<IgnoreNextLockMouseMotion>()
+        .init_resource::<CursorLockState>()
         .add_plugins(DefaultPlugins.set(AssetPlugin {
             meta_check: AssetMetaCheck::Never,
             watch_for_changes_override: Some(true),
@@ -82,32 +97,27 @@ fn setup_lighting(mut commands: Commands) {
 }
 
 fn lock_cursor(
-    mut ignore_next_lock_mouse_motion: ResMut<IgnoreNextLockMouseMotion>,
+    mut cursor_lock_state: ResMut<CursorLockState>,
     mut primary_window: Single<(&mut Window, &mut CursorOptions), With<PrimaryWindow>>,
 ) {
     let (window, cursor_options) = &mut *primary_window;
-    set_cursor_grab(
-        window,
-        cursor_options,
-        true,
-        &mut ignore_next_lock_mouse_motion,
-    );
+    set_cursor_locked(window, cursor_options, true, &mut cursor_lock_state);
 }
 
 fn toggle_inspector_mode(
     keys: Res<ButtonInput<KeyCode>>,
     mut inspector_mode: ResMut<InspectorMode>,
-    mut ignore_next_lock_mouse_motion: ResMut<IgnoreNextLockMouseMotion>,
+    mut cursor_lock_state: ResMut<CursorLockState>,
     mut primary_window: Single<(&mut Window, &mut CursorOptions), With<PrimaryWindow>>,
 ) {
     if keys.just_pressed(KeyCode::Escape) {
         inspector_mode.enabled = !inspector_mode.enabled;
         let (window, cursor_options) = &mut *primary_window;
-        set_cursor_grab(
+        set_cursor_locked(
             window,
             cursor_options,
             !inspector_mode.enabled,
-            &mut ignore_next_lock_mouse_motion,
+            &mut cursor_lock_state,
         );
     }
 }
@@ -115,18 +125,14 @@ fn toggle_inspector_mode(
 fn recapture_cursor(
     buttons: Res<ButtonInput<MouseButton>>,
     inspector_mode: Res<InspectorMode>,
-    mut ignore_next_lock_mouse_motion: ResMut<IgnoreNextLockMouseMotion>,
+    mut cursor_lock_state: ResMut<CursorLockState>,
     mut primary_window: Single<(&mut Window, &mut CursorOptions), With<PrimaryWindow>>,
 ) {
     let (window, cursor_options) = &mut *primary_window;
 
-    if !inspector_mode.enabled && buttons.just_pressed(MouseButton::Left) && cursor_options.visible {
-        set_cursor_grab(
-            window,
-            cursor_options,
-            true,
-            &mut ignore_next_lock_mouse_motion,
-        );
+    if !inspector_mode.enabled && buttons.just_pressed(MouseButton::Left) && cursor_options.visible
+    {
+        set_cursor_locked(window, cursor_options, true, &mut cursor_lock_state);
     }
 }
 
@@ -134,15 +140,15 @@ fn inspector_mode_active(inspector_mode: Res<InspectorMode>) -> bool {
     inspector_mode.enabled
 }
 
-fn set_cursor_grab(
+fn set_cursor_locked(
     window: &mut Window,
     cursor_options: &mut CursorOptions,
-    grab: bool,
-    ignore_next_lock_mouse_motion: &mut IgnoreNextLockMouseMotion,
+    locked: bool,
+    cursor_lock_state: &mut CursorLockState,
 ) {
-    if grab {
+    if locked {
         center_cursor_in_window(window);
-        ignore_next_lock_mouse_motion.0 = true;
+        cursor_lock_state.arm_motion_suppression();
         cursor_options.visible = false;
         cursor_options.grab_mode = CursorGrabMode::Locked;
     } else {
@@ -157,11 +163,8 @@ fn center_cursor_in_window(window: &mut Window) {
 }
 
 fn suppress_first_lock_mouse_motion(
-    mut ignore_next_lock_mouse_motion: ResMut<IgnoreNextLockMouseMotion>,
+    mut cursor_lock_state: ResMut<CursorLockState>,
     mut accumulated_mouse_motion: ResMut<AccumulatedMouseMotion>,
 ) {
-    if ignore_next_lock_mouse_motion.0 && accumulated_mouse_motion.delta.length_squared() > 0.0 {
-        accumulated_mouse_motion.delta = Vec2::ZERO;
-        ignore_next_lock_mouse_motion.0 = false;
-    }
+    cursor_lock_state.suppress_motion(&mut accumulated_mouse_motion);
 }
