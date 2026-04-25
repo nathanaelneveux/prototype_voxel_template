@@ -77,10 +77,6 @@ impl VoxelWorldConfig for PrototypeWorld {
         MIN_DESPAWN_DISTANCE
     }
 
-    fn attach_chunks_to_root(&self) -> bool {
-        false
-    }
-
     fn voxel_texture(&self) -> Option<(String, u32)> {
         Some((
             "example_voxel_texture.png".into(),
