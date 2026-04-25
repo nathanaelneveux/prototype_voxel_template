@@ -3,7 +3,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use avian3d::prelude::*;
 use bevy::prelude::*;
 use bevy_voxel_world::prelude::{
-    Chunk, ChunkWillChangeLod, ChunkWillDespawn, NeedsDespawn, VoxelWorld, WorldVoxel,
+    Chunk, ChunkWillChangeLod, ChunkWillDespawn, ChunkWillSpawn, NeedsDespawn, VoxelWorld,
+    WorldVoxel,
 };
 
 use crate::terrain::PrototypeWorld;
@@ -196,7 +197,7 @@ fn cleanup_chunk_assets(
 fn invalidate_chunk_colliders(
     mut commands: Commands,
     mut lod_changes: MessageReader<ChunkWillChangeLod<PrototypeWorld>>,
-    changed_meshes: Query<Entity, (With<Chunk<PrototypeWorld>>, Changed<Mesh3d>)>,
+    mut chunk_spawns: MessageReader<ChunkWillSpawn<PrototypeWorld>>,
     mut dirty_entities: Local<HashSet<Entity>>,
 ) {
     dirty_entities.clear();
@@ -205,8 +206,8 @@ fn invalidate_chunk_colliders(
         dirty_entities.insert(event.entity);
     }
 
-    for entity in &changed_meshes {
-        dirty_entities.insert(entity);
+    for event in chunk_spawns.read() {
+        dirty_entities.insert(event.entity);
     }
 
     for entity in dirty_entities.drain() {
