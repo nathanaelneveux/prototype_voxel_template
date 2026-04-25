@@ -8,6 +8,7 @@ mod terrain_noise;
 use assets::AssetSupportPlugin;
 use avian3d::prelude::*;
 use bevy::asset::AssetMetaCheck;
+use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
 use bevy::input::{InputSystems, mouse::AccumulatedMouseMotion};
 use bevy::light::CascadeShadowConfigBuilder;
 use bevy::prelude::*;
@@ -55,6 +56,8 @@ fn main() {
         }))
         .add_plugins((
             PhysicsPlugins::default(),
+            FrameTimeDiagnosticsPlugin::default(),
+            LogDiagnosticsPlugin::default(),
             EnhancedInputPlugin,
             EguiPlugin::default(),
             WorldInspectorPlugin::default().run_if(inspector_mode_active),
