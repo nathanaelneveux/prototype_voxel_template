@@ -149,7 +149,8 @@ fn collect_solid_voxel_coordinates<I: Copy + PartialEq>(
     sy: u32,
     sz: u32,
 ) -> Vec<IVec3> {
-    let mut coords = Vec::new();
+    let inner_volume = ((sx - 2) * (sy - 2) * (sz - 2)) as usize;
+    let mut coords = Vec::with_capacity(inner_volume.min(voxels.len()));
     let yz_stride = sx * sy;
 
     for z in 1..(sz - 1) {
@@ -167,7 +168,8 @@ fn collect_solid_voxel_coordinates<I: Copy + PartialEq>(
 }
 
 fn full_chunk_coordinates(sx: u32, sy: u32, sz: u32) -> Vec<IVec3> {
-    let mut coords = Vec::new();
+    let inner_volume = ((sx - 2) * (sy - 2) * (sz - 2)) as usize;
+    let mut coords = Vec::with_capacity(inner_volume);
 
     for z in 1..(sz - 1) {
         for y in 1..(sy - 1) {
@@ -195,8 +197,9 @@ fn invalidate_chunk_colliders(
     mut commands: Commands,
     mut lod_changes: MessageReader<ChunkWillChangeLod<PrototypeWorld>>,
     changed_meshes: Query<Entity, (With<Chunk<PrototypeWorld>>, Changed<Mesh3d>)>,
+    mut dirty_entities: Local<HashSet<Entity>>,
 ) {
-    let mut dirty_entities = HashSet::new();
+    dirty_entities.clear();
 
     for event in lod_changes.read() {
         dirty_entities.insert(event.entity);
@@ -206,7 +209,7 @@ fn invalidate_chunk_colliders(
         dirty_entities.insert(entity);
     }
 
-    for entity in dirty_entities {
+    for entity in dirty_entities.drain() {
         commands
             .entity(entity)
             .remove::<(ChunkColliderReady, Collider, RigidBody)>();

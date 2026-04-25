@@ -101,11 +101,26 @@ fn build_render_mesh(
     ambient_occlusion: bool,
 ) -> Mesh {
     let mut mesh = RenderMeshBuffers::with_quad_capacity(quads.num_quads());
+    let voxel_size = voxel_size_from_shape(shape);
+    let mut material_cache = [None; 256];
 
     for (group, face) in quads.groups.iter().zip(faces.iter().copied()) {
         for quad in group {
-            let ao = ambient_occlusion.then(|| face_aos(face, quad.minimum, voxels, shape));
-            mesh.append_quad(face, quad, voxels, shape, texture_index_mapper, ao);
+            let ao = if ambient_occlusion {
+                Some(face_aos(face, quad.minimum, voxels, shape))
+            } else {
+                None
+            };
+            mesh.append_quad(
+                face,
+                quad,
+                voxels,
+                shape,
+                voxel_size,
+                texture_index_mapper,
+                &mut material_cache,
+                ao,
+            );
         }
     }
 
@@ -140,13 +155,14 @@ impl RenderMeshBuffers {
         quad: &UnorientedQuad,
         voxels: &[WorldVoxel<u8>],
         shape: &RuntimeShape<u32, 3>,
+        voxel_size: BMVec3,
         texture_index_mapper: &TextureIndexMapperFn<u8>,
+        material_cache: &mut [Option<[u32; 3]>; 256],
         ao: Option<[u32; 4]>,
     ) {
         self.indices
             .extend_from_slice(&face.quad_mesh_indices(self.positions.len() as u32));
 
-        let voxel_size = voxel_size_from_shape(shape);
         let corners = face.quad_corners(quad);
         self.positions.extend_from_slice(&corners.map(|corner| {
             let corner = corner.as_vec3();
@@ -167,7 +183,16 @@ impl RenderMeshBuffers {
 
         let voxel_index = shape.linearize(quad.minimum) as usize;
         let material = match voxels[voxel_index] {
-            WorldVoxel::Solid(material) => texture_index_mapper(material),
+            WorldVoxel::Solid(material) => {
+                let cached = &mut material_cache[material as usize];
+                if let Some(mapped) = *cached {
+                    mapped
+                } else {
+                    let mapped = texture_index_mapper(material);
+                    *cached = Some(mapped);
+                    mapped
+                }
+            }
             _ => [0, 0, 0],
         };
         self.material_types.extend(std::iter::repeat_n(material, 4));
@@ -238,18 +263,20 @@ fn resample_voxels_nearest<I: PartialEq + Copy>(
 where
     WorldVoxel<I>: Clone,
 {
+    let [mx, my, mz] = mesh_shape.as_array();
+    let [dx, dy, dz] = data_shape.as_array();
+    let x_map: Vec<u32> = (0..mx).map(|x| map_nearest_1d(x, mx, dx)).collect();
+    let y_map: Vec<u32> = (0..my).map(|y| map_nearest_1d(y, my, dy)).collect();
+    let z_map: Vec<u32> = (0..mz).map(|z| map_nearest_1d(z, mz, dz)).collect();
     let mut out = Vec::with_capacity(mesh_shape.size() as usize);
 
-    for lin in 0..mesh_shape.size() {
-        let [ix, iy, iz] = mesh_shape.delinearize(lin);
-        let [mx, my, mz] = mesh_shape.as_array();
-        let [dx, dy, dz] = data_shape.as_array();
-        let sx = map_nearest_1d(ix, mx, dx);
-        let sy = map_nearest_1d(iy, my, dy);
-        let sz = map_nearest_1d(iz, mz, dz);
-
-        let src_lin = data_shape.linearize([sx, sy, sz]);
-        out.push(data_voxels[src_lin as usize]);
+    for &sz in &z_map {
+        for &sy in &y_map {
+            for &sx in &x_map {
+                let src_lin = data_shape.linearize([sx, sy, sz]);
+                out.push(data_voxels[src_lin as usize]);
+            }
+        }
     }
 
     out
