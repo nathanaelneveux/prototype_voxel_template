@@ -1,7 +1,10 @@
+use std::time::Duration;
+
 use avian3d::prelude::*;
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::prelude::*;
 use bevy::window::{CursorOptions, PrimaryWindow};
+use bevy_ahoy::input::AccumulatedInput;
 use bevy_ahoy::prelude::*;
 use bevy_enhanced_input::prelude::*;
 use bevy_voxel_world::{
@@ -13,6 +16,20 @@ use crate::terrain::{MATERIAL_GRASS, PrototypeWorld};
 
 const FOG_START: f32 = 96.0;
 const FOG_END: f32 = 160.0;
+const PLAYER_RADIUS: f32 = 0.3;
+const PLAYER_HEIGHT: f32 = 1.8;
+const PLAYER_CROUCH_HEIGHT: f32 = 1.5;
+const PLAYER_STANDING_VIEW_HEIGHT: f32 = 1.62;
+const PLAYER_CROUCH_VIEW_HEIGHT: f32 = 1.27;
+const PLAYER_WALK_SPEED: f32 = 4.32;
+const PLAYER_SPRINT_SPEED: f32 = PLAYER_WALK_SPEED * 1.5;
+const PLAYER_CROUCH_SPEED_SCALE: f32 = 0.3;
+const PLAYER_JUMP_HEIGHT: f32 = 1.0;
+const PLAYER_GRAVITY: f32 = 32.0;
+const PLAYER_STEP_SIZE: f32 = 0.55;
+const PLAYER_MAX_SPEED: f32 = 80.0;
+const PLAYER_AIR_ACCELERATION_HZ: f32 = 8.0;
+const PLAYER_MAX_AIR_WISH_SPEED: f32 = 0.35;
 
 pub struct PlayerPlugin;
 
@@ -20,6 +37,12 @@ impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_input_context::<PlayerInput>()
             .add_systems(Startup, spawn_player)
+            .add_systems(
+                FixedPostUpdate,
+                (update_player_movement_speed, filter_held_jump)
+                    .chain()
+                    .before(AhoySystems::MoveCharacters),
+            )
             .add_systems(Update, (edit_voxels, reset_player_to_world_spawn));
     }
 }
@@ -33,23 +56,20 @@ struct PlayerInput;
 #[derive(Component)]
 struct PlayerCamera;
 
+#[derive(Component, Default)]
+struct HeldJumpFilter {
+    was_grounded: bool,
+}
+
 fn spawn_player(mut commands: Commands, world: Res<PrototypeWorld>) {
     let player = commands
         .spawn((
             Name::new("Player"),
             Player,
             PlayerInput,
-            CharacterController {
-                speed: 11.0,
-                max_speed: 28.0,
-                air_speed: 1.35,
-                jump_height: 1.75,
-                step_size: 0.8,
-                standing_view_height: 1.65,
-                crouch_view_height: 1.05,
-                ..default()
-            },
-            Collider::cylinder(0.45, 1.75),
+            HeldJumpFilter::default(),
+            player_controller(),
+            Collider::cylinder(PLAYER_RADIUS, PLAYER_HEIGHT),
             Transform::from_translation(world.player_spawn_position()),
             actions!(PlayerInput[
                 (
@@ -88,6 +108,79 @@ fn spawn_player(mut commands: Commands, world: Res<PrototypeWorld>) {
         CharacterControllerCameraOf::new(player),
         VoxelWorldCamera::<PrototypeWorld>::default(),
     ));
+}
+
+fn player_controller() -> CharacterController {
+    CharacterController {
+        crouch_height: PLAYER_CROUCH_HEIGHT,
+        standing_view_height: PLAYER_STANDING_VIEW_HEIGHT,
+        crouch_view_height: PLAYER_CROUCH_VIEW_HEIGHT,
+        ground_distance: 0.04,
+        min_walk_cos: 45.0_f32.to_radians().cos(),
+        stop_speed: PLAYER_WALK_SPEED,
+        friction_hz: 12.0,
+        acceleration_hz: 16.0,
+        air_acceleration_hz: PLAYER_AIR_ACCELERATION_HZ,
+        gravity: PLAYER_GRAVITY,
+        step_size: PLAYER_STEP_SIZE,
+        step_down_detection_distance: PLAYER_STEP_SIZE * 2.0,
+        crouch_speed_scale: PLAYER_CROUCH_SPEED_SCALE,
+        speed: PLAYER_WALK_SPEED,
+        max_speed: PLAYER_MAX_SPEED,
+        jump_height: PLAYER_JUMP_HEIGHT,
+        max_air_wish_speed: PLAYER_MAX_AIR_WISH_SPEED,
+        coyote_time: Duration::from_millis(50),
+        jump_input_buffer: Duration::from_millis(50),
+        ..default()
+    }
+}
+
+fn update_player_movement_speed(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut player: Single<(&mut CharacterController, &CharacterControllerState), With<Player>>,
+) {
+    let sprinting = (keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight))
+        && keys.pressed(KeyCode::KeyW)
+        && !keys.pressed(KeyCode::ControlLeft)
+        && !keys.pressed(KeyCode::ControlRight)
+        && !player.1.crouching;
+
+    player.0.speed = if sprinting {
+        PLAYER_SPRINT_SPEED
+    } else {
+        PLAYER_WALK_SPEED
+    };
+}
+
+fn filter_held_jump(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut player: Single<
+        (
+            &CharacterControllerState,
+            &mut AccumulatedInput,
+            &mut HeldJumpFilter,
+        ),
+        With<Player>,
+    >,
+) {
+    let (state, input, filter) = &mut *player;
+    let holding_jump = keys.pressed(KeyCode::Space);
+
+    if !holding_jump {
+        filter.was_grounded = state.grounded.is_some();
+        return;
+    }
+
+    if state.grounded.is_none() {
+        filter.was_grounded = false;
+        return;
+    }
+
+    if !filter.was_grounded {
+        input.jumped = None;
+    }
+
+    filter.was_grounded = true;
 }
 
 fn reset_player_to_world_spawn(
