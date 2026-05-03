@@ -61,6 +61,18 @@ struct HeldJumpFilter {
     was_grounded: bool,
 }
 
+#[derive(InputAction)]
+#[action_output(bool)]
+struct Sprint;
+
+#[derive(InputAction)]
+#[action_output(bool)]
+struct BreakVoxel;
+
+#[derive(InputAction)]
+#[action_output(bool)]
+struct PlaceVoxel;
+
 fn spawn_player(mut commands: Commands, world: Res<PrototypeWorld>) {
     let player = commands
         .spawn((
@@ -75,19 +87,47 @@ fn spawn_player(mut commands: Commands, world: Res<PrototypeWorld>) {
                 (
                     Action::<Movement>::new(),
                     DeadZone::default(),
-                    Bindings::spawn(Cardinal::wasd_keys()),
+                    Bindings::spawn((
+                        Cardinal::wasd_keys(),
+                        Cardinal::arrows(),
+                        Cardinal::dpad(),
+                        Axial::left_stick(),
+                    )),
                 ),
                 (
                     Action::<Jump>::new(),
-                    bindings![KeyCode::Space],
+                    bindings![KeyCode::Space, GamepadButton::South],
                 ),
                 (
                     Action::<Crouch>::new(),
-                    bindings![KeyCode::ControlLeft],
+                    bindings![
+                        KeyCode::ControlLeft,
+                        KeyCode::ControlRight,
+                        GamepadButton::LeftThumb,
+                    ],
+                ),
+                (
+                    Action::<Sprint>::new(),
+                    bindings![
+                        KeyCode::ShiftLeft,
+                        KeyCode::ShiftRight,
+                        GamepadButton::North,
+                    ],
+                ),
+                (
+                    Action::<BreakVoxel>::new(),
+                    bindings![MouseButton::Left, GamepadButton::RightTrigger2],
+                ),
+                (
+                    Action::<PlaceVoxel>::new(),
+                    bindings![MouseButton::Right, GamepadButton::LeftTrigger2],
                 ),
                 (
                     Action::<RotateCamera>::new(),
-                    Bindings::spawn(Spawn((Binding::mouse_motion(), Scale::splat(0.08)))),
+                    Bindings::spawn((
+                        Spawn((Binding::mouse_motion(), Scale::splat(0.08))),
+                        Axial::right_stick().with(Scale::splat(2.5)),
+                    )),
                 ),
             ]),
         ))
@@ -136,14 +176,16 @@ fn player_controller() -> CharacterController {
 }
 
 fn update_player_movement_speed(
-    keys: Res<ButtonInput<KeyCode>>,
+    movement: Single<&Action<Movement>>,
+    sprint: Single<&Action<Sprint>>,
+    crouch: Single<&Action<Crouch>>,
     mut player: Single<(&mut CharacterController, &CharacterControllerState), With<Player>>,
 ) {
-    let sprinting = (keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight))
-        && keys.pressed(KeyCode::KeyW)
-        && !keys.pressed(KeyCode::ControlLeft)
-        && !keys.pressed(KeyCode::ControlRight)
-        && !player.1.crouching;
+    let movement = movement.into_inner();
+    let sprint = sprint.into_inner();
+    let crouch = crouch.into_inner();
+
+    let sprinting = **sprint && movement.y > 0.0 && !**crouch && !player.1.crouching;
 
     player.0.speed = if sprinting {
         PLAYER_SPRINT_SPEED
@@ -153,7 +195,7 @@ fn update_player_movement_speed(
 }
 
 fn filter_held_jump(
-    keys: Res<ButtonInput<KeyCode>>,
+    jump: Single<&Action<Jump>>,
     mut player: Single<
         (
             &CharacterControllerState,
@@ -163,8 +205,10 @@ fn filter_held_jump(
         With<Player>,
     >,
 ) {
+    let jump = jump.into_inner();
+
     let (state, input, filter) = &mut *player;
-    let holding_jump = keys.pressed(KeyCode::Space);
+    let holding_jump = **jump;
 
     if !holding_jump {
         filter.was_grounded = state.grounded.is_some();
@@ -200,14 +244,16 @@ fn reset_player_to_world_spawn(
 }
 
 fn edit_voxels(
-    buttons: Res<ButtonInput<MouseButton>>,
+    break_events: Single<&ActionEvents, With<Action<BreakVoxel>>>,
+    place_events: Single<&ActionEvents, With<Action<PlaceVoxel>>>,
     cursor_options: Single<&CursorOptions, With<PrimaryWindow>>,
     camera: Single<&GlobalTransform, (With<PlayerCamera>, Without<Player>)>,
     mut voxel_world: VoxelWorld<PrototypeWorld>,
 ) {
-    if cursor_options.visible
-        || (!buttons.just_pressed(MouseButton::Left) && !buttons.just_pressed(MouseButton::Right))
-    {
+    let breaking = break_events.contains(ActionEvents::START);
+    let placing = place_events.contains(ActionEvents::START);
+
+    if cursor_options.visible || (!breaking && !placing) {
         return;
     }
 
@@ -217,12 +263,12 @@ fn edit_voxels(
         return;
     };
 
-    if buttons.just_pressed(MouseButton::Left) {
+    if breaking {
         let edited_position = hit.position.as_ivec3();
         let _ = set_voxel_state(&mut voxel_world, edited_position, WorldVoxel::Air);
     }
 
-    if buttons.just_pressed(MouseButton::Right) {
+    if placing {
         let Some(normal) = hit.normal else {
             return;
         };
