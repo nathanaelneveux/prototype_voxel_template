@@ -96,7 +96,7 @@ fn spawn_player(mut commands: Commands, world: Res<PrototypeWorld>) {
                 ),
                 (
                     Action::<Jump>::new(),
-                    bindings![KeyCode::Space, GamepadButton::South],
+                    bindings![KeyCode::Space, GamepadButton::North],
                 ),
                 (
                     Action::<Crouch>::new(),
@@ -111,16 +111,16 @@ fn spawn_player(mut commands: Commands, world: Res<PrototypeWorld>) {
                     bindings![
                         KeyCode::ShiftLeft,
                         KeyCode::ShiftRight,
-                        GamepadButton::North,
+                        GamepadButton::West,
                     ],
                 ),
                 (
                     Action::<BreakVoxel>::new(),
-                    bindings![MouseButton::Left, GamepadButton::RightTrigger2],
+                    bindings![MouseButton::Left, GamepadButton::South],
                 ),
                 (
                     Action::<PlaceVoxel>::new(),
-                    bindings![MouseButton::Right, GamepadButton::LeftTrigger2],
+                    bindings![MouseButton::Right, GamepadButton::East],
                 ),
                 (
                     Action::<RotateCamera>::new(),
