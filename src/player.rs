@@ -12,10 +12,10 @@ use bevy_voxel_world::{
     prelude::{VoxelWorld, VoxelWorldCamera, WorldVoxel},
 };
 
-use crate::terrain::{MATERIAL_GRASS, PrototypeWorld};
+use crate::terrain::{MATERIAL_GRASS, PrototypeWorld, TERRAIN_VIEW_DISTANCE};
 
 const FOG_START: f32 = 96.0;
-const FOG_END: f32 = 160.0;
+const FOG_END: f32 = TERRAIN_VIEW_DISTANCE;
 const PLAYER_RADIUS: f32 = 0.3;
 const PLAYER_HEIGHT: f32 = 1.8;
 const PLAYER_CROUCH_HEIGHT: f32 = 1.5;

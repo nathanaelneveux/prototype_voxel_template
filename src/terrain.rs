@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use bevy::asset::AssetEvent;
 use bevy::prelude::*;
-use bevy_voxel_world::custom_meshing::CHUNK_SIZE_I;
+use bevy_voxel_world::custom_meshing::{CHUNK_SIZE_F, CHUNK_SIZE_I};
 use bevy_voxel_world::prelude::*;
 
 use crate::assets::{PrototypeConfig, TemplateAssets};
@@ -16,7 +16,8 @@ pub const MATERIAL_STONE: u8 = 2;
 pub const MATERIAL_SAND: u8 = 3;
 
 const WATERLINE_Y: i32 = 2;
-const SPAWNING_DISTANCE: u32 = 10;
+pub const SPAWNING_DISTANCE: u32 = 10;
+pub const TERRAIN_VIEW_DISTANCE: f32 = (SPAWNING_DISTANCE - 1) as f32 * CHUNK_SIZE_F;
 const MIN_DESPAWN_DISTANCE: u32 = 2;
 
 pub struct TerrainPlugin;
