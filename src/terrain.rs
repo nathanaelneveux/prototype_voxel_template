@@ -10,10 +10,45 @@ use crate::assets::{PrototypeConfig, TemplateAssets};
 use crate::terrain_meshing::build_chunk_mesh;
 use crate::terrain_noise::{BEDROCK_FLOOR_Y, MAX_SURFACE_Y, TerrainColumn, TerrainNoise};
 
-pub const MATERIAL_GRASS: u8 = 0;
-pub const MATERIAL_DIRT: u8 = 1;
-pub const MATERIAL_STONE: u8 = 2;
-pub const MATERIAL_SAND: u8 = 3;
+pub type MaterialIndex = u8;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum TerrainMaterial {
+    Grass = 0,
+    Dirt = 1,
+    Stone = 2,
+    Sand = 3,
+}
+
+impl TerrainMaterial {
+    pub const fn index(self) -> MaterialIndex {
+        self as MaterialIndex
+    }
+
+    pub fn voxel(self) -> WorldVoxel<MaterialIndex> {
+        WorldVoxel::Solid(self.index())
+    }
+
+    fn from_index(index: MaterialIndex) -> Option<Self> {
+        match index {
+            0 => Some(Self::Grass),
+            1 => Some(Self::Dirt),
+            2 => Some(Self::Stone),
+            3 => Some(Self::Sand),
+            _ => None,
+        }
+    }
+
+    fn texture_indices(index: MaterialIndex) -> [u32; 3] {
+        match Self::from_index(index).unwrap_or(Self::Stone) {
+            Self::Grass => [3, 3, 3],
+            Self::Dirt => [2, 2, 2],
+            Self::Stone => [1, 1, 1],
+            Self::Sand => [0, 0, 0],
+        }
+    }
+}
 
 const WATERLINE_Y: i32 = 2;
 pub const SPAWNING_DISTANCE: u32 = 10;
@@ -67,7 +102,7 @@ impl PrototypeWorld {
 }
 
 impl VoxelWorldConfig for PrototypeWorld {
-    type MaterialIndex = u8;
+    type MaterialIndex = MaterialIndex;
     type ChunkUserBundle = ();
 
     fn spawning_distance(&self) -> u32 {
@@ -86,13 +121,7 @@ impl VoxelWorldConfig for PrototypeWorld {
     }
 
     fn texture_index_mapper(&self) -> Arc<dyn Fn(Self::MaterialIndex) -> [u32; 3] + Send + Sync> {
-        Arc::new(|material| match material {
-            MATERIAL_GRASS => [3, 3, 3],
-            MATERIAL_DIRT => [2, 2, 2],
-            MATERIAL_STONE => [1, 1, 1],
-            MATERIAL_SAND => [0, 0, 0],
-            _ => [1, 1, 1],
-        })
+        Arc::new(TerrainMaterial::texture_indices)
     }
 
     fn voxel_lookup_delegate(&self) -> VoxelLookupDelegate<Self::MaterialIndex> {
@@ -103,7 +132,7 @@ impl VoxelWorldConfig for PrototypeWorld {
             let chunk_max_y = chunk_min_y + CHUNK_SIZE_I - 1;
 
             if chunk_max_y < BEDROCK_FLOOR_Y {
-                return Box::new(|_, _| WorldVoxel::Solid(MATERIAL_STONE));
+                return Box::new(|_, _| TerrainMaterial::Stone.voxel());
             }
 
             if chunk_min_y > MAX_SURFACE_Y + 1 {
@@ -115,7 +144,7 @@ impl VoxelWorldConfig for PrototypeWorld {
 
             Box::new(move |pos: IVec3, _previous| {
                 if pos.y <= BEDROCK_FLOOR_Y {
-                    return WorldVoxel::Solid(MATERIAL_STONE);
+                    return TerrainMaterial::Stone.voxel();
                 }
 
                 let column = *column_cache
@@ -129,21 +158,21 @@ impl VoxelWorldConfig for PrototypeWorld {
                 let depth = column.surface_y - pos.y;
                 let material = if depth == 0 {
                     if column.surface_y <= WATERLINE_Y {
-                        MATERIAL_SAND
+                        TerrainMaterial::Sand
                     } else {
-                        MATERIAL_GRASS
+                        TerrainMaterial::Grass
                     }
                 } else if depth <= column.soil_depth {
                     if column.surface_y <= WATERLINE_Y {
-                        MATERIAL_SAND
+                        TerrainMaterial::Sand
                     } else {
-                        MATERIAL_DIRT
+                        TerrainMaterial::Dirt
                     }
                 } else {
-                    MATERIAL_STONE
+                    TerrainMaterial::Stone
                 };
 
-                WorldVoxel::Solid(material)
+                material.voxel()
             })
         })
     }
@@ -214,11 +243,11 @@ fn apply_live_prototype_config(
     }
 
     info!(
-        "applied prototype config: seed={}, terrain_period={}, spawn_height_offset={}, texture_layers={}, ambient_occlusion={}",
-        config.world_seed,
-        config.terrain_period,
-        config.player_spawn_height_offset,
-        config.voxel_texture_layers,
-        config.ambient_occlusion
+        world_seed = config.world_seed,
+        terrain_period = config.terrain_period,
+        player_spawn_height_offset = config.player_spawn_height_offset,
+        voxel_texture_layers = config.voxel_texture_layers,
+        ambient_occlusion = config.ambient_occlusion,
+        "applied prototype config"
     );
 }

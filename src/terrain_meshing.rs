@@ -23,39 +23,33 @@ thread_local! {
         RefCell::new(BinaryGreedyQuadsBuffer::new());
 }
 
+const DEFAULT_VERTEX_COLOR: [f32; 4] = [1.0; 4];
+
+type MaterialTextureCache = [Option<[u32; 3]>; 256];
+
 pub fn build_chunk_mesh(
     voxels: VoxelArray<u8>,
-    data_shape_in: UVec3,
-    mesh_shape_in: UVec3,
+    data_shape_extent: UVec3,
+    mesh_shape_extent: UVec3,
     texture_index_mapper: TextureIndexMapperFn<u8>,
     ambient_occlusion: bool,
 ) -> Mesh {
-    let default_shape = UVec3::splat(CHUNK_SIZE_U + 2);
-    let data_shape_in = if data_shape_in == UVec3::ZERO {
-        default_shape
-    } else {
-        data_shape_in
-    };
-    let mesh_shape_in = if mesh_shape_in == UVec3::ZERO {
-        default_shape
-    } else {
-        mesh_shape_in
-    };
-
-    let data_shape = RuntimeShape::<u32, 3>::new(data_shape_in.to_array());
-    let mesh_shape = RuntimeShape::<u32, 3>::new(mesh_shape_in.to_array());
+    let data_shape_extent = padded_chunk_shape_or_default(data_shape_extent);
+    let mesh_shape_extent = padded_chunk_shape_or_default(mesh_shape_extent);
+    let data_shape = RuntimeShape::<u32, 3>::new(data_shape_extent.to_array());
+    let mesh_shape = RuntimeShape::<u32, 3>::new(mesh_shape_extent.to_array());
     let faces = RIGHT_HANDED_Y_UP_CONFIG.faces;
 
-    let voxels_for_mesh: VoxelArray<u8> = if data_shape_in != mesh_shape_in {
+    let voxels_for_mesh: VoxelArray<u8> = if data_shape_extent != mesh_shape_extent {
         resample_voxels_nearest(voxels.as_ref(), &data_shape, &mesh_shape).into()
     } else {
         voxels
     };
 
     let max = [
-        mesh_shape_in.x.saturating_sub(1),
-        mesh_shape_in.y.saturating_sub(1),
-        mesh_shape_in.z.saturating_sub(1),
+        mesh_shape_extent.x.saturating_sub(1),
+        mesh_shape_extent.y.saturating_sub(1),
+        mesh_shape_extent.z.saturating_sub(1),
     ];
 
     BINARY_BUFFER.with(|buffer| {
@@ -92,6 +86,14 @@ pub fn build_chunk_mesh(
     })
 }
 
+fn padded_chunk_shape_or_default(shape: UVec3) -> UVec3 {
+    if shape == UVec3::ZERO {
+        UVec3::splat(CHUNK_SIZE_U + 2)
+    } else {
+        shape
+    }
+}
+
 fn build_render_mesh(
     quads: &QuadBuffer,
     faces: &[OrientedBlockFace; 6],
@@ -102,7 +104,7 @@ fn build_render_mesh(
 ) -> Mesh {
     let mut mesh = RenderMeshBuffers::with_quad_capacity(quads.num_quads());
     let voxel_size = voxel_size_from_shape(shape);
-    let mut material_cache = [None; 256];
+    let mut material_cache: MaterialTextureCache = [None; 256];
 
     for (group, face) in quads.groups.iter().zip(faces.iter().copied()) {
         for quad in group {
@@ -157,7 +159,7 @@ impl RenderMeshBuffers {
         shape: &RuntimeShape<u32, 3>,
         voxel_size: BMVec3,
         texture_index_mapper: &TextureIndexMapperFn<u8>,
-        material_cache: &mut [Option<[u32; 3]>; 256],
+        material_cache: &mut MaterialTextureCache,
         ao: Option<[u32; 4]>,
     ) {
         self.indices
@@ -200,7 +202,8 @@ impl RenderMeshBuffers {
         if let Some(ao) = ao {
             self.colors.extend(ao.map(ao_vertex_color));
         } else {
-            self.colors.extend(std::iter::repeat_n([1.0; 4], 4));
+            self.colors
+                .extend(std::iter::repeat_n(DEFAULT_VERTEX_COLOR, 4));
         }
     }
 

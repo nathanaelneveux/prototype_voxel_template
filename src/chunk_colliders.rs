@@ -11,6 +11,9 @@ use crate::terrain::PrototypeWorld;
 
 const CHUNK_COLLIDER_VOXEL_SIZE: f32 = 1.0;
 const CHUNK_COLLIDER_CACHE_MAX_ENTRIES: usize = 512;
+const MIN_PADDED_CHUNK_DIMENSION: u32 = 3;
+
+type ColliderCacheKey = u64;
 
 pub struct ChunkColliderPlugin;
 
@@ -30,12 +33,12 @@ struct ChunkColliderReady;
 
 #[derive(Resource, Default)]
 struct ChunkColliderCache {
-    colliders: HashMap<u64, Collider>,
-    access_order: VecDeque<u64>,
+    colliders: HashMap<ColliderCacheKey, Collider>,
+    access_order: VecDeque<ColliderCacheKey>,
 }
 
 impl ChunkColliderCache {
-    fn get(&mut self, key: u64) -> Option<Collider> {
+    fn get(&mut self, key: ColliderCacheKey) -> Option<Collider> {
         let collider = self.colliders.get(&key).cloned();
         if collider.is_some() {
             self.touch(key);
@@ -43,11 +46,11 @@ impl ChunkColliderCache {
         collider
     }
 
-    fn insert(&mut self, key: u64, collider: Collider) {
+    fn insert(&mut self, key: ColliderCacheKey, collider: Collider) {
         self.insert_with_capacity(key, collider, CHUNK_COLLIDER_CACHE_MAX_ENTRIES);
     }
 
-    fn insert_with_capacity(&mut self, key: u64, collider: Collider, capacity: usize) {
+    fn insert_with_capacity(&mut self, key: ColliderCacheKey, collider: Collider, capacity: usize) {
         if capacity == 0 {
             return;
         }
@@ -64,7 +67,7 @@ impl ChunkColliderCache {
         }
     }
 
-    fn touch(&mut self, key: u64) {
+    fn touch(&mut self, key: ColliderCacheKey) {
         if let Some(index) = self
             .access_order
             .iter()
@@ -92,10 +95,7 @@ fn ensure_chunk_colliders(
 ) {
     for (entity, chunk) in &chunk_meshes {
         if chunk.lod_level != 0 {
-            commands
-                .entity(entity)
-                .remove::<(RigidBody, Collider)>()
-                .insert(ChunkColliderReady);
+            mark_chunk_collider_ready(&mut commands, entity);
             continue;
         }
 
@@ -104,10 +104,7 @@ fn ensure_chunk_colliders(
         };
 
         if chunk_data.is_empty() {
-            commands
-                .entity(entity)
-                .remove::<(RigidBody, Collider)>()
-                .insert(ChunkColliderReady);
+            mark_chunk_collider_ready(&mut commands, entity);
             continue;
         }
 
@@ -117,7 +114,10 @@ fn ensure_chunk_colliders(
         } else {
             let shape = chunk_data.data_shape();
             let [sx, sy, sz] = shape.to_array();
-            if sx < 3 || sy < 3 || sz < 3 {
+            if sx < MIN_PADDED_CHUNK_DIMENSION
+                || sy < MIN_PADDED_CHUNK_DIMENSION
+                || sz < MIN_PADDED_CHUNK_DIMENSION
+            {
                 continue;
             }
 
@@ -144,19 +144,25 @@ fn ensure_chunk_colliders(
     }
 }
 
+fn mark_chunk_collider_ready(commands: &mut Commands, entity: Entity) {
+    commands
+        .entity(entity)
+        .remove::<(RigidBody, Collider)>()
+        .insert(ChunkColliderReady);
+}
+
 fn collect_solid_voxel_coordinates<I: Copy + PartialEq>(
     voxels: &[WorldVoxel<I>],
     sx: u32,
     sy: u32,
     sz: u32,
 ) -> Vec<IVec3> {
-    let inner_volume = ((sx - 2) * (sy - 2) * (sz - 2)) as usize;
-    let mut coords = Vec::with_capacity(inner_volume.min(voxels.len()));
+    let mut coords = Vec::with_capacity(interior_voxel_count(sx, sy, sz).min(voxels.len()));
     let yz_stride = sx * sy;
 
-    for z in 1..(sz - 1) {
-        for y in 1..(sy - 1) {
-            for x in 1..(sx - 1) {
+    for z in 1..sz.saturating_sub(1) {
+        for y in 1..sy.saturating_sub(1) {
+            for x in 1..sx.saturating_sub(1) {
                 let index = (x + sx * y + yz_stride * z) as usize;
                 if matches!(voxels[index], WorldVoxel::Solid(_)) {
                     coords.push(IVec3::new(x as i32, y as i32, z as i32));
@@ -169,18 +175,21 @@ fn collect_solid_voxel_coordinates<I: Copy + PartialEq>(
 }
 
 fn full_chunk_coordinates(sx: u32, sy: u32, sz: u32) -> Vec<IVec3> {
-    let inner_volume = ((sx - 2) * (sy - 2) * (sz - 2)) as usize;
-    let mut coords = Vec::with_capacity(inner_volume);
+    let mut coords = Vec::with_capacity(interior_voxel_count(sx, sy, sz));
 
-    for z in 1..(sz - 1) {
-        for y in 1..(sy - 1) {
-            for x in 1..(sx - 1) {
+    for z in 1..sz.saturating_sub(1) {
+        for y in 1..sy.saturating_sub(1) {
+            for x in 1..sx.saturating_sub(1) {
                 coords.push(IVec3::new(x as i32, y as i32, z as i32));
             }
         }
     }
 
     coords
+}
+
+fn interior_voxel_count(sx: u32, sy: u32, sz: u32) -> usize {
+    (sx.saturating_sub(2) * sy.saturating_sub(2) * sz.saturating_sub(2)) as usize
 }
 
 fn cleanup_chunk_assets(

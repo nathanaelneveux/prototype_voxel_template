@@ -70,12 +70,12 @@ fn log_when_template_assets_are_ready(
     };
 
     info!(
-        "template asset support ready: seed={}, terrain_period={}, spawn_height_offset={}, texture_layers={}, ambient_occlusion={}",
-        config.world_seed,
-        config.terrain_period,
-        config.player_spawn_height_offset,
-        config.voxel_texture_layers,
-        config.ambient_occlusion
+        world_seed = config.world_seed,
+        terrain_period = config.terrain_period,
+        player_spawn_height_offset = config.player_spawn_height_offset,
+        voxel_texture_layers = config.voxel_texture_layers,
+        ambient_occlusion = config.ambient_occlusion,
+        "template asset support ready"
     );
     *logged = true;
 }

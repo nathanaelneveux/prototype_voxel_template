@@ -12,7 +12,8 @@ use bevy_voxel_world::{
     prelude::{VoxelWorld, VoxelWorldCamera, WorldVoxel},
 };
 
-use crate::terrain::{MATERIAL_GRASS, PrototypeWorld, TERRAIN_VIEW_DISTANCE};
+use crate::terrain::{PrototypeWorld, TERRAIN_VIEW_DISTANCE, TerrainMaterial};
+use crate::world_environment::sky_color;
 
 const FOG_START: f32 = 96.0;
 const FOG_END: f32 = TERRAIN_VIEW_DISTANCE;
@@ -138,7 +139,7 @@ fn spawn_player(mut commands: Commands, world: Res<PrototypeWorld>) {
         PlayerCamera,
         Camera3d::default(),
         DistanceFog {
-            color: Color::srgb(0.53, 0.74, 0.94),
+            color: sky_color(),
             falloff: FogFalloff::Linear {
                 start: FOG_START,
                 end: FOG_END,
@@ -281,7 +282,7 @@ fn edit_voxels(
             let _ = set_voxel_state(
                 &mut voxel_world,
                 placement_position,
-                WorldVoxel::Solid(MATERIAL_GRASS),
+                TerrainMaterial::Grass.voxel(),
             );
         }
     }
