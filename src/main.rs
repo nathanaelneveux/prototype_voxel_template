@@ -14,12 +14,15 @@ use bevy::light::CascadeShadowConfigBuilder;
 use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow, Window};
 use bevy_ahoy::prelude::AhoyPlugins;
-use bevy_enhanced_input::prelude::{EnhancedInputPlugin, EnhancedInputSystems};
+use bevy_enhanced_input::prelude::{
+    Action, ActionEvents, EnhancedInputPlugin, EnhancedInputSystems, InputAction,
+    InputContextAppExt, actions, bindings,
+};
 use bevy_inspector_egui::{bevy_egui::EguiPlugin, quick::WorldInspectorPlugin};
 
 use chunk_colliders::ChunkColliderPlugin;
 use player::PlayerPlugin;
-use terrain::TerrainPlugin;
+use terrain::{TERRAIN_VIEW_DISTANCE, TerrainPlugin};
 
 #[derive(Resource, Default)]
 struct InspectorMode {
@@ -30,6 +33,17 @@ struct InspectorMode {
 struct CursorLockState {
     ignore_next_motion: bool,
 }
+
+#[derive(Component, Default)]
+struct AppInput;
+
+#[derive(InputAction)]
+#[action_output(bool)]
+struct ToggleInspectorMode;
+
+#[derive(InputAction)]
+#[action_output(bool)]
+struct RecaptureCursor;
 
 impl CursorLockState {
     fn arm_motion_suppression(&mut self) {
@@ -67,19 +81,42 @@ fn main() {
             ChunkColliderPlugin,
             PlayerPlugin,
         ))
+        .add_input_context::<AppInput>()
         .add_systems(
             PreUpdate,
             suppress_first_lock_mouse_motion
                 .after(InputSystems)
                 .before(EnhancedInputSystems::Prepare),
         )
-        .add_systems(Startup, (setup_lighting, lock_cursor))
-        .add_systems(Update, (toggle_inspector_mode, recapture_cursor))
+        .add_systems(Startup, (spawn_app_input, setup_lighting, lock_cursor))
+        .add_systems(Update, toggle_inspector_mode)
+        .add_systems(PostUpdate, recapture_cursor)
         .run();
 }
 
+fn spawn_app_input(mut commands: Commands) {
+    commands.spawn((
+        Name::new("AppInput"),
+        AppInput,
+        actions!(AppInput[
+            (
+                Action::<ToggleInspectorMode>::new(),
+                bindings![KeyCode::Escape],
+            ),
+            (
+                Action::<RecaptureCursor>::new(),
+                bindings![MouseButton::Left],
+            ),
+        ]),
+    ));
+}
+
 fn setup_lighting(mut commands: Commands) {
-    let cascade_shadow_config = CascadeShadowConfigBuilder { ..default() }.build();
+    let cascade_shadow_config = CascadeShadowConfigBuilder {
+        maximum_distance: TERRAIN_VIEW_DISTANCE,
+        ..default()
+    }
+    .build();
     commands.spawn((
         Name::new("Sun"),
         DirectionalLight {
@@ -108,33 +145,38 @@ fn lock_cursor(
 }
 
 fn toggle_inspector_mode(
-    keys: Res<ButtonInput<KeyCode>>,
+    toggle_inspector_events: Single<&ActionEvents, With<Action<ToggleInspectorMode>>>,
     mut inspector_mode: ResMut<InspectorMode>,
     mut cursor_lock_state: ResMut<CursorLockState>,
     mut primary_window: Single<(&mut Window, &mut CursorOptions), With<PrimaryWindow>>,
 ) {
-    if keys.just_pressed(KeyCode::Escape) {
-        inspector_mode.enabled = !inspector_mode.enabled;
-        let (window, cursor_options) = &mut *primary_window;
-        set_cursor_locked(
-            window,
-            cursor_options,
-            !inspector_mode.enabled,
-            &mut cursor_lock_state,
-        );
+    if !toggle_inspector_events.contains(ActionEvents::START) {
+        return;
     }
+
+    inspector_mode.enabled = !inspector_mode.enabled;
+    let (window, cursor_options) = &mut *primary_window;
+    set_cursor_locked(
+        window,
+        cursor_options,
+        !inspector_mode.enabled,
+        &mut cursor_lock_state,
+    );
 }
 
 fn recapture_cursor(
-    buttons: Res<ButtonInput<MouseButton>>,
+    recapture_events: Single<&ActionEvents, With<Action<RecaptureCursor>>>,
     inspector_mode: Res<InspectorMode>,
     mut cursor_lock_state: ResMut<CursorLockState>,
     mut primary_window: Single<(&mut Window, &mut CursorOptions), With<PrimaryWindow>>,
 ) {
+    if !recapture_events.contains(ActionEvents::START) {
+        return;
+    }
+
     let (window, cursor_options) = &mut *primary_window;
 
-    if !inspector_mode.enabled && buttons.just_pressed(MouseButton::Left) && cursor_options.visible
-    {
+    if !inspector_mode.enabled && cursor_options.visible {
         set_cursor_locked(window, cursor_options, true, &mut cursor_lock_state);
     }
 }
