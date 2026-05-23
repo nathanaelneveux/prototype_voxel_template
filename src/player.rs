@@ -7,10 +7,7 @@ use bevy::window::{CursorOptions, PrimaryWindow};
 use bevy_ahoy::input::AccumulatedInput;
 use bevy_ahoy::prelude::*;
 use bevy_enhanced_input::prelude::*;
-use bevy_voxel_world::{
-    custom_meshing::CHUNK_SIZE_I,
-    prelude::{VoxelWorld, VoxelWorldCamera, WorldVoxel},
-};
+use bevy_voxel_world::prelude::{VoxelWorld, VoxelWorldCamera, WorldVoxel};
 
 use crate::terrain::{PrototypeWorld, TERRAIN_VIEW_DISTANCE, TerrainMaterial};
 use crate::world_environment::sky_color;
@@ -266,7 +263,7 @@ fn edit_voxels(
 
     if breaking {
         let edited_position = hit.position.as_ivec3();
-        let _ = set_voxel_state(&mut voxel_world, edited_position, WorldVoxel::Air);
+        voxel_world.set_voxel(edited_position, WorldVoxel::Air);
     }
 
     if placing {
@@ -279,60 +276,7 @@ fn edit_voxels(
             voxel_world.get_voxel(placement_position),
             WorldVoxel::Air | WorldVoxel::Unset
         ) {
-            let _ = set_voxel_state(
-                &mut voxel_world,
-                placement_position,
-                TerrainMaterial::Grass.voxel(),
-            );
+            voxel_world.set_voxel(placement_position, TerrainMaterial::Grass.voxel());
         }
     }
-}
-
-fn set_voxel_state(
-    world: &mut VoxelWorld<PrototypeWorld>,
-    position: IVec3,
-    desired: WorldVoxel<u8>,
-) -> bool {
-    if world.get_voxel(position) == desired {
-        return false;
-    }
-
-    world.set_voxel(position, desired);
-    mark_adjacent_chunks(world, position);
-    true
-}
-
-fn mark_adjacent_chunks(world: &mut VoxelWorld<PrototypeWorld>, position: IVec3) {
-    let chunk_size = IVec3::splat(CHUNK_SIZE_I);
-    let local = position.rem_euclid(chunk_size);
-    let last = CHUNK_SIZE_I - 1;
-
-    if local.x == 0 {
-        mark_chunk(world, position - IVec3::X);
-    }
-    if local.x == last {
-        mark_chunk(world, position + IVec3::X);
-    }
-    if local.y == 0 {
-        mark_chunk(world, position - IVec3::Y);
-    }
-    if local.y == last {
-        mark_chunk(world, position + IVec3::Y);
-    }
-    if local.z == 0 {
-        mark_chunk(world, position - IVec3::Z);
-    }
-    if local.z == last {
-        mark_chunk(world, position + IVec3::Z);
-    }
-}
-
-fn mark_chunk(world: &mut VoxelWorld<PrototypeWorld>, position: IVec3) {
-    let chunk_position = position.div_euclid(IVec3::splat(CHUNK_SIZE_I));
-    if world.get_chunk_data(chunk_position).is_none() {
-        return;
-    }
-
-    let current = world.get_voxel(position);
-    world.set_voxel(position, current);
 }

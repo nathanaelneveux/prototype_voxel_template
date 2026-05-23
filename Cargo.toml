@@ -16,7 +16,7 @@ bevy_asset_loader = "0.26.0"
 bevy_common_assets = { version = "0.16.0", features = ["ron"] }
 bevy_enhanced_input = "0.24.4"
 bevy-inspector-egui = "0.36.0"
-bevy_voxel_world = "0.15"
+bevy_voxel_world = "0.16"
 block-mesh = "0.2.0"
 block-mesh-bgm = "0.2.2"
 ndshape = "0.3.0"
