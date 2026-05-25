@@ -30,6 +30,8 @@ fn main() {
         }))
         .add_plugins((
             PhysicsPlugins::default(),
+            // Uncomment the next line for physics debugging
+            //PhysicsDebugPlugin,
             FrameTimeDiagnosticsPlugin::default(),
             LogDiagnosticsPlugin::default(),
             EnhancedInputPlugin,

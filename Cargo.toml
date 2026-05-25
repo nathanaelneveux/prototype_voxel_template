@@ -9,7 +9,7 @@ default = []
 dev_native = ["bevy/dynamic_linking"]
 
 [dependencies]
-avian3d = { version = "0.6", default-features = false, features = ["3d", "f32", "parry-f32"] }
+avian3d = { version = "0.6", default-features = false, features = ["3d", "f32", "parry-f32", "debug-plugin"] }
 bevy = { version = "0.18", features = ["file_watcher"] }
 bevy_ahoy = "0.1.0-rc.6"
 bevy_asset_loader = "0.26.0"
