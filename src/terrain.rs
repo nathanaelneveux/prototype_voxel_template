@@ -16,9 +16,9 @@ pub type MaterialIndex = u8;
 #[repr(u8)]
 pub enum TerrainMaterial {
     Grass = 0,
-    Dirt = 1,
-    Stone = 2,
-    Sand = 3,
+    Brick = 1,
+    SnowBrick = 2,
+    Snow = 3,
 }
 
 impl TerrainMaterial {
@@ -33,19 +33,24 @@ impl TerrainMaterial {
     fn from_index(index: MaterialIndex) -> Option<Self> {
         match index {
             0 => Some(Self::Grass),
-            1 => Some(Self::Dirt),
-            2 => Some(Self::Stone),
-            3 => Some(Self::Sand),
+            1 => Some(Self::Brick),
+            2 => Some(Self::SnowBrick),
+            3 => Some(Self::Snow),
             _ => None,
         }
     }
 
     fn texture_indices(index: MaterialIndex) -> [u32; 3] {
-        match Self::from_index(index).unwrap_or(Self::Stone) {
-            Self::Grass => [3, 3, 3],
-            Self::Dirt => [2, 2, 2],
-            Self::Stone => [1, 1, 1],
-            Self::Sand => [0, 0, 0],
+        const SNOW_TEXTURE: u32 = 0;
+        const SNOW_BRICK_TEXTURE: u32 = 1;
+        const BRICK_TEXTURE: u32 = 2;
+        const GRASS_TEXTURE: u32 = 3;
+
+        match Self::from_index(index).unwrap_or(Self::Brick) {
+            Self::Grass => [GRASS_TEXTURE, GRASS_TEXTURE, GRASS_TEXTURE],
+            Self::Brick => [BRICK_TEXTURE, BRICK_TEXTURE, BRICK_TEXTURE],
+            Self::SnowBrick => [SNOW_TEXTURE, SNOW_BRICK_TEXTURE, BRICK_TEXTURE],
+            Self::Snow => [SNOW_TEXTURE, SNOW_TEXTURE, SNOW_TEXTURE],
         }
     }
 }
@@ -132,7 +137,7 @@ impl VoxelWorldConfig for PrototypeWorld {
             let chunk_max_y = chunk_min_y + CHUNK_SIZE_I - 1;
 
             if chunk_max_y < BEDROCK_FLOOR_Y {
-                return Box::new(|_, _| TerrainMaterial::Stone.voxel());
+                return Box::new(|_, _| TerrainMaterial::Brick.voxel());
             }
 
             if chunk_min_y > MAX_SURFACE_Y + 1 {
@@ -144,7 +149,7 @@ impl VoxelWorldConfig for PrototypeWorld {
 
             Box::new(move |pos: IVec3, _previous| {
                 if pos.y <= BEDROCK_FLOOR_Y {
-                    return TerrainMaterial::Stone.voxel();
+                    return TerrainMaterial::Brick.voxel();
                 }
 
                 let column = *column_cache
@@ -158,18 +163,18 @@ impl VoxelWorldConfig for PrototypeWorld {
                 let depth = column.surface_y - pos.y;
                 let material = if depth == 0 {
                     if column.surface_y <= WATERLINE_Y {
-                        TerrainMaterial::Sand
+                        TerrainMaterial::Snow
                     } else {
                         TerrainMaterial::Grass
                     }
                 } else if depth <= column.soil_depth {
                     if column.surface_y <= WATERLINE_Y {
-                        TerrainMaterial::Sand
+                        TerrainMaterial::Snow
                     } else {
-                        TerrainMaterial::Dirt
+                        TerrainMaterial::SnowBrick
                     }
                 } else {
-                    TerrainMaterial::Stone
+                    TerrainMaterial::Brick
                 };
 
                 material.voxel()
