@@ -24,6 +24,7 @@ cargo run
 - `WASD`: move
 - `Space`: jump
 - `Left Ctrl`: crouch
+- `Shift`: sprint
 - Mouse: look
 - Left click: remove voxel
 - Right click: place voxel
