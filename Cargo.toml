@@ -5,12 +5,19 @@ edition = "2024"
 license = "CC0-1.0 OR MIT OR Apache-2.0"
 
 [features]
-default = []
-dev_native = ["bevy/dynamic_linking"]
+default = ["dev_native"]
+dev = [
+    "bevy/dynamic_linking",
+    "bevy/track_location",
+]
+dev_native = [
+    "dev",
+    "bevy/file_watcher",
+]
 
 [dependencies]
 avian3d = { version = "0.6", default-features = false, features = ["3d", "f32", "parry-f32", "debug-plugin"] }
-bevy = { version = "0.18", features = ["file_watcher"] }
+bevy = "0.18"
 bevy_ahoy = "0.1"
 bevy_asset_loader = "0.26"
 bevy_common_assets = { version = "0.16", features = ["ron"] }
@@ -36,6 +43,7 @@ tracing = { version = "0.1", features = [
 [lints.clippy]
 too_many_arguments = "allow"
 type_complexity = "allow"
+nonstandard_macro_braces = "warn"
 
 [profile.dev]
 opt-level = 1
