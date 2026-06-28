@@ -106,11 +106,11 @@ fn refresh_voxel_texture_on_change(
         return;
     }
 
-    let Some(image) = images.get_mut(&template_assets.voxel_texture) else {
+    let Some(mut image) = images.get_mut(&template_assets.voxel_texture) else {
         return;
     };
 
-    prepare_voxel_texture(image, world.voxel_texture_layers());
+    prepare_voxel_texture(&mut image, world.voxel_texture_layers());
 }
 
 fn prepare_voxel_texture(image: &mut Image, layers: u32) {
