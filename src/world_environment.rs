@@ -28,7 +28,7 @@ fn setup_lighting(mut commands: Commands) {
         DirectionalLight {
             color: Color::srgb(1.0, 0.96, 0.88),
             illuminance: 18_000.0,
-            shadows_enabled: true,
+            shadow_maps_enabled: true,
             ..default()
         },
         Transform::from_xyz(0.0, 0.0, 0.0).looking_at(Vec3::new(0.35, -0.8, 0.25), Vec3::Y),
