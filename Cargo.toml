@@ -18,14 +18,12 @@ dev_native = [
 [dependencies]
 avian3d = { version = "0.7", default-features = false, features = ["3d", "f32", "parry-f32", "debug-plugin"] }
 bevy = "0.19"
-# Pinned until Bevy 0.19 support is released: https://github.com/janhohenheim/bevy_ahoy/pull/87
-bevy_ahoy = { git = "https://github.com/andogq/bevy_ahoy", rev = "a501fd87037d8094838cfaca561ff87efade6bf2" }
+bevy_ahoy = "0.2"
 bevy_asset_loader = "0.27"
 bevy_common_assets = { version = "0.17", features = ["ron"] }
 bevy_enhanced_input = "0.26"
 bevy-inspector-egui = "0.37"
-# Pinned until Bevy 0.19 support is released: https://github.com/splashdust/bevy_voxel_world/pull/112
-bevy_voxel_world = { git = "https://github.com/splashdust/bevy_voxel_world", rev = "90f0c59769902342eccfb99b5e01ec94e6de6e74" }
+bevy_voxel_world = "0.17"
 block-mesh = "0.2"
 block-mesh-bgm = "0.2"
 ndshape = "0.3"
