@@ -18,6 +18,8 @@ use block_mesh::{
 use block_mesh_bgm::{BinaryGreedyQuadsBuffer, binary_greedy_quads, binary_greedy_quads_ao_safe};
 use ndshape::{RuntimeShape, Shape};
 
+use crate::ambient_occlusion::FaceAoSampler;
+
 thread_local! {
     static BINARY_BUFFER: RefCell<BinaryGreedyQuadsBuffer> =
         RefCell::new(BinaryGreedyQuadsBuffer::new());
@@ -104,15 +106,17 @@ fn build_render_mesh(
 ) -> Mesh {
     let mut mesh = RenderMeshBuffers::with_quad_capacity(quads.num_quads());
     let voxel_size = voxel_size_from_shape(shape);
+    let voxel_strides = voxel_strides_from_shape(shape);
     let mut material_cache: MaterialTextureCache = [None; 256];
 
     for (group, face) in quads.groups.iter().zip(faces.iter().copied()) {
+        let ao_sampler = ambient_occlusion.then(|| FaceAoSampler::new(face, voxel_strides));
         for quad in group {
-            let ao = if ambient_occlusion {
-                Some(face_aos(face, quad.minimum, voxels, shape))
-            } else {
-                None
-            };
+            let ao = ao_sampler.as_ref().map(|sampler| {
+                sampler.sample(voxels, quad.minimum, |voxel| {
+                    voxel.get_visibility() == VoxelVisibility::Opaque
+                })
+            });
             mesh.append_quad(
                 face,
                 quad,
@@ -160,7 +164,7 @@ impl RenderMeshBuffers {
         voxel_size: BMVec3,
         texture_index_mapper: &TextureIndexMapperFn<u8>,
         material_cache: &mut MaterialTextureCache,
-        ao: Option<[u32; 4]>,
+        ao: Option<[u8; 4]>,
     ) {
         self.indices
             .extend_from_slice(&face.quad_mesh_indices(self.positions.len() as u32));
@@ -298,105 +302,18 @@ fn voxel_size_from_shape(shape: &RuntimeShape<u32, 3>) -> BMVec3 {
     )
 }
 
-fn ao_vertex_color(ao_value: u32) -> [f32; 4] {
-    match ao_value {
-        0 => [0.10, 0.10, 0.10, 1.0],
-        1 => [0.30, 0.30, 0.30, 1.0],
-        2 => [0.50, 0.50, 0.50, 1.0],
-        _ => [1.0, 1.0, 1.0, 1.0],
-    }
+fn voxel_strides_from_shape(shape: &RuntimeShape<u32, 3>) -> [usize; 3] {
+    let [x, y, _] = shape.as_array().map(|extent| extent as usize);
+    [1, x, x * y]
 }
 
-fn ao_value(side1: bool, corner: bool, side2: bool) -> u32 {
-    match (side1, corner, side2) {
-        (true, _, true) => 0,
-        (true, true, false) | (false, true, true) => 1,
-        (false, false, false) => 3,
-        _ => 2,
-    }
-}
+fn ao_vertex_color(ao_value: u8) -> [f32; 4] {
+    const AO_COLORS: [[f32; 4]; 4] = [
+        [0.10, 0.10, 0.10, 1.0],
+        [0.30, 0.30, 0.30, 1.0],
+        [0.50, 0.50, 0.50, 1.0],
+        [1.00, 1.00, 1.00, 1.0],
+    ];
 
-fn side_aos<I: PartialEq>(neighbours: [WorldVoxel<I>; 8]) -> [u32; 4] {
-    let opaque = neighbours.map(|voxel| voxel.get_visibility() == VoxelVisibility::Opaque);
-
-    [
-        ao_value(opaque[0], opaque[1], opaque[2]),
-        ao_value(opaque[2], opaque[3], opaque[4]),
-        ao_value(opaque[6], opaque[7], opaque[0]),
-        ao_value(opaque[4], opaque[5], opaque[6]),
-    ]
-}
-
-fn face_aos<I: PartialEq + Copy>(
-    face: OrientedBlockFace,
-    minimum: [u32; 3],
-    voxels: &[WorldVoxel<I>],
-    shape: &RuntimeShape<u32, 3>,
-) -> [u32; 4] {
-    let normal = face.signed_normal();
-    let [x, y, z] = minimum;
-
-    match [normal.x, normal.y, normal.z] {
-        [-1, 0, 0] => side_aos([
-            voxels[shape.linearize([x - 1, y, z - 1]) as usize],
-            voxels[shape.linearize([x - 1, y - 1, z - 1]) as usize],
-            voxels[shape.linearize([x - 1, y - 1, z]) as usize],
-            voxels[shape.linearize([x - 1, y - 1, z + 1]) as usize],
-            voxels[shape.linearize([x - 1, y, z + 1]) as usize],
-            voxels[shape.linearize([x - 1, y + 1, z + 1]) as usize],
-            voxels[shape.linearize([x - 1, y + 1, z]) as usize],
-            voxels[shape.linearize([x - 1, y + 1, z - 1]) as usize],
-        ]),
-        [1, 0, 0] => side_aos([
-            voxels[shape.linearize([x + 1, y, z - 1]) as usize],
-            voxels[shape.linearize([x + 1, y - 1, z - 1]) as usize],
-            voxels[shape.linearize([x + 1, y - 1, z]) as usize],
-            voxels[shape.linearize([x + 1, y - 1, z + 1]) as usize],
-            voxels[shape.linearize([x + 1, y, z + 1]) as usize],
-            voxels[shape.linearize([x + 1, y + 1, z + 1]) as usize],
-            voxels[shape.linearize([x + 1, y + 1, z]) as usize],
-            voxels[shape.linearize([x + 1, y + 1, z - 1]) as usize],
-        ]),
-        [0, -1, 0] => side_aos([
-            voxels[shape.linearize([x, y - 1, z - 1]) as usize],
-            voxels[shape.linearize([x - 1, y - 1, z - 1]) as usize],
-            voxels[shape.linearize([x - 1, y - 1, z]) as usize],
-            voxels[shape.linearize([x - 1, y - 1, z + 1]) as usize],
-            voxels[shape.linearize([x, y - 1, z + 1]) as usize],
-            voxels[shape.linearize([x + 1, y - 1, z + 1]) as usize],
-            voxels[shape.linearize([x + 1, y - 1, z]) as usize],
-            voxels[shape.linearize([x + 1, y - 1, z - 1]) as usize],
-        ]),
-        [0, 1, 0] => side_aos([
-            voxels[shape.linearize([x, y + 1, z - 1]) as usize],
-            voxels[shape.linearize([x - 1, y + 1, z - 1]) as usize],
-            voxels[shape.linearize([x - 1, y + 1, z]) as usize],
-            voxels[shape.linearize([x - 1, y + 1, z + 1]) as usize],
-            voxels[shape.linearize([x, y + 1, z + 1]) as usize],
-            voxels[shape.linearize([x + 1, y + 1, z + 1]) as usize],
-            voxels[shape.linearize([x + 1, y + 1, z]) as usize],
-            voxels[shape.linearize([x + 1, y + 1, z - 1]) as usize],
-        ]),
-        [0, 0, -1] => side_aos([
-            voxels[shape.linearize([x - 1, y, z - 1]) as usize],
-            voxels[shape.linearize([x - 1, y - 1, z - 1]) as usize],
-            voxels[shape.linearize([x, y - 1, z - 1]) as usize],
-            voxels[shape.linearize([x + 1, y - 1, z - 1]) as usize],
-            voxels[shape.linearize([x + 1, y, z - 1]) as usize],
-            voxels[shape.linearize([x + 1, y + 1, z - 1]) as usize],
-            voxels[shape.linearize([x, y + 1, z - 1]) as usize],
-            voxels[shape.linearize([x - 1, y + 1, z - 1]) as usize],
-        ]),
-        [0, 0, 1] => side_aos([
-            voxels[shape.linearize([x - 1, y, z + 1]) as usize],
-            voxels[shape.linearize([x - 1, y - 1, z + 1]) as usize],
-            voxels[shape.linearize([x, y - 1, z + 1]) as usize],
-            voxels[shape.linearize([x + 1, y - 1, z + 1]) as usize],
-            voxels[shape.linearize([x + 1, y, z + 1]) as usize],
-            voxels[shape.linearize([x + 1, y + 1, z + 1]) as usize],
-            voxels[shape.linearize([x, y + 1, z + 1]) as usize],
-            voxels[shape.linearize([x - 1, y + 1, z + 1]) as usize],
-        ]),
-        _ => unreachable!(),
-    }
+    AO_COLORS[ao_value as usize]
 }
