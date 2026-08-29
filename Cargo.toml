@@ -25,7 +25,7 @@ bevy_enhanced_input = "0.26"
 bevy-inspector-egui = "0.37"
 bevy_voxel_world = "0.17"
 block-mesh = "0.2"
-block-mesh-bgm = "0.2"
+block-mesh-bgm = "0.2.4"
 ndshape = "0.3"
 noiz = "0.5"
 serde = { version = "1", features = ["derive"] }
