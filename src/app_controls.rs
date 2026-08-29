@@ -1,4 +1,5 @@
 use bevy::input::{InputSystems, mouse::AccumulatedMouseMotion};
+use bevy::pbr::wireframe::{WireframeConfig, WireframePlugin};
 use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow, Window};
 use bevy_enhanced_input::prelude::{
@@ -13,7 +14,14 @@ impl Plugin for AppControlsPlugin {
         app.add_plugins((
             EguiPlugin::default(),
             WorldInspectorPlugin::default().run_if(inspector_mode_active),
+            WireframePlugin::default(),
         ))
+        .insert_resource(WireframeConfig {
+            global: false,
+            default_color: Color::srgb(0.0, 1.0, 0.85),
+            default_line_width: 1.0,
+            ..default()
+        })
         .init_resource::<InspectorMode>()
         .init_resource::<CursorLockState>()
         .add_input_context::<AppInput>()
@@ -24,7 +32,7 @@ impl Plugin for AppControlsPlugin {
                 .after(InputSystems)
                 .before(EnhancedInputSystems::Prepare),
         )
-        .add_systems(Update, toggle_inspector_mode)
+        .add_systems(Update, (toggle_inspector_mode, toggle_mesh_debug_overlay))
         .add_systems(PostUpdate, recapture_cursor);
     }
 }
@@ -45,6 +53,10 @@ struct AppInput;
 #[derive(InputAction)]
 #[action_output(bool)]
 struct ToggleInspectorMode;
+
+#[derive(InputAction)]
+#[action_output(bool)]
+struct ToggleMeshDebugOverlay;
 
 #[derive(InputAction)]
 #[action_output(bool)]
@@ -71,6 +83,10 @@ fn spawn_app_input(mut commands: Commands) {
             (
                 Action::<ToggleInspectorMode>::new(),
                 bindings![KeyCode::Escape],
+            ),
+            (
+                Action::<ToggleMeshDebugOverlay>::new(),
+                bindings![KeyCode::F3],
             ),
             (
                 Action::<RecaptureCursor>::new(),
@@ -105,6 +121,21 @@ fn toggle_inspector_mode(
         cursor_options,
         !inspector_mode.enabled,
         &mut cursor_lock_state,
+    );
+}
+
+fn toggle_mesh_debug_overlay(
+    toggle_overlay_events: Single<&ActionEvents, With<Action<ToggleMeshDebugOverlay>>>,
+    mut wireframe_config: ResMut<WireframeConfig>,
+) {
+    if !toggle_overlay_events.contains(ActionEvents::START) {
+        return;
+    }
+
+    wireframe_config.global = !wireframe_config.global;
+    info!(
+        enabled = wireframe_config.global,
+        "mesh debug overlay toggled"
     );
 }
 

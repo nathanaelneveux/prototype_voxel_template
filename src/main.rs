@@ -13,6 +13,7 @@ use avian3d::prelude::*;
 use bevy::asset::AssetMetaCheck;
 use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
 use bevy::prelude::*;
+use bevy::render::{RenderPlugin, render_resource::WgpuFeatures, settings::WgpuSettings};
 use bevy_ahoy::prelude::AhoyPlugins;
 use bevy_enhanced_input::prelude::EnhancedInputPlugin;
 
@@ -23,11 +24,22 @@ use world_environment::WorldEnvironmentPlugin;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(AssetPlugin {
-            meta_check: AssetMetaCheck::Never,
-            watch_for_changes_override: Some(true),
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(AssetPlugin {
+                    meta_check: AssetMetaCheck::Never,
+                    watch_for_changes_override: Some(true),
+                    ..default()
+                })
+                .set(RenderPlugin {
+                    render_creation: WgpuSettings {
+                        features: WgpuFeatures::POLYGON_MODE_LINE,
+                        ..default()
+                    }
+                    .into(),
+                    ..default()
+                }),
+        )
         .add_plugins((
             PhysicsPlugins::default(),
             // Uncomment the next line for physics debugging
