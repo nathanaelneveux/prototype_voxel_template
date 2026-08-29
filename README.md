@@ -28,6 +28,7 @@ cargo run
 - Mouse: look
 - Left click: remove voxel
 - Right click: place voxel
+- `F3`: toggle mesh debug overlay
 - `Esc`: toggle inspector and release/capture cursor
 
 ## Config
