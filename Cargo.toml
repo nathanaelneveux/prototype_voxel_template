@@ -2,6 +2,7 @@
 name = "prototype_voxel_template"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.97.1"
 license = "CC0-1.0 OR MIT OR Apache-2.0"
 
 [features]
@@ -16,18 +17,19 @@ dev_native = [
 ]
 
 [dependencies]
-avian3d = { version = "0.7", default-features = false, features = ["3d", "f32", "parry-f32", "debug-plugin"] }
-bevy = "0.19"
-bevy_ahoy = "0.2"
-bevy_asset_loader = "0.27"
-bevy_common_assets = { version = "0.17", features = ["ron"] }
-bevy_enhanced_input = "0.26"
-bevy-inspector-egui = "0.37"
-bevy_voxel_world = "0.17"
+avian3d = { version = "0.8", default-features = false, features = ["3d", "parry-f32", "debug-plugin"] }
+bevy = "0.20"
+# Pinned until Bevy 0.20 support is released: https://github.com/janhohenheim/bevy_ahoy/pull/91
+bevy_ahoy = { git = "https://github.com/valeenalabs/bevy_ahoy", rev = "4c161090e75d28d458822a65f91665f1dd94c8e6" }
+bevy_asset_loader = "0.28"
+bevy_common_assets = { version = "0.18", features = ["ron"] }
+bevy_enhanced_input = "0.27"
+bevy-inspector-egui = "0.38"
+bevy_voxel_world = { version = "0.19", features = ["light_propagation"] }
 block-mesh = "0.2"
-block-mesh-bgm = "0.2.4"
+block-mesh-bgm = "0.2"
 ndshape = "0.3"
-noiz = "0.5"
+noiz = "0.6"
 serde = { version = "1", features = ["derive"] }
 
 # Set max log levels. This helps avoid unwanted low-severity log spam, which can affect performance.

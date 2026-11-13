@@ -7,6 +7,7 @@
 - Rolling voxel terrain generated with `bevy_voxel_world` and `noiz`
 - Binary greedy chunk meshing with `block-mesh-bgm`
 - Ambient occlusion-ready voxel shading
+- Propagated sky light and light from emissive voxels
 - First-person player controller using `bevy_ahoy`
 - Chunk collider generation with caching for solid terrain
 - `bevy-inspector-egui` on an `Esc` toggle
@@ -14,6 +15,8 @@
 - Hot-reloadable prototype config and voxel texture
 
 ## Run
+
+Use Rust 1.97.1 or newer.
 
 ```bash
 cargo run
@@ -28,6 +31,8 @@ cargo run
 - Mouse: look
 - Left click: remove voxel
 - Right click: place voxel
+- `E`: place an emitter against the aimed face
+- `B`: clear solid voxels within five blocks of the aimed voxel
 - `F3`: toggle mesh debug overlay
 - `Esc`: toggle inspector and release/capture cursor
 

@@ -1,11 +1,8 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
-use bevy_voxel_world::prelude::{
-    Chunk, ChunkWillChangeLod, ChunkWillDespawn, ChunkWillSpawn, NeedsDespawn, VoxelWorld,
-    WorldVoxel,
-};
+use bevy_voxel_world::prelude::{ChunkPublished, VoxelWorld, VoxelWorldSet, WorldVoxel};
 
 use crate::terrain::PrototypeWorld;
 
@@ -19,17 +16,12 @@ pub struct ChunkColliderPlugin;
 
 impl Plugin for ChunkColliderPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<ChunkColliderCache>()
-            .add_systems(PreUpdate, cleanup_chunk_assets)
-            .add_systems(
-                PostUpdate,
-                (invalidate_chunk_colliders, ensure_chunk_colliders).chain(),
-            );
+        app.init_resource::<ChunkColliderCache>().add_systems(
+            PreUpdate,
+            update_chunk_colliders.after(VoxelWorldSet::<PrototypeWorld>::default()),
+        );
     }
 }
-
-#[derive(Component, Default)]
-struct ChunkColliderReady;
 
 #[derive(Resource, Default)]
 struct ChunkColliderCache {
@@ -80,31 +72,25 @@ impl ChunkColliderCache {
     }
 }
 
-fn ensure_chunk_colliders(
+fn update_chunk_colliders(
     mut commands: Commands,
     mut chunk_collider_cache: ResMut<ChunkColliderCache>,
     voxel_world: VoxelWorld<PrototypeWorld>,
-    chunk_meshes: Query<
-        (Entity, &Chunk<PrototypeWorld>),
-        (
-            With<Mesh3d>,
-            Without<ChunkColliderReady>,
-            Without<NeedsDespawn>,
-        ),
-    >,
+    mut published: MessageReader<ChunkPublished<PrototypeWorld>>,
 ) {
-    for (entity, chunk) in &chunk_meshes {
-        if chunk.lod_level != 0 {
-            mark_chunk_collider_ready(&mut commands, entity);
+    for event in published.read() {
+        if event.chunk_key.lod_level != 0 {
             continue;
         }
-
-        let Some(chunk_data) = voxel_world.get_chunk_data(chunk.position) else {
+        let Ok(mut entity) = commands.get_entity(event.entity) else {
+            continue;
+        };
+        let Some(chunk_data) = voxel_world.get_chunk_data(event.chunk_key) else {
             continue;
         };
 
         if chunk_data.is_empty() {
-            mark_chunk_collider_ready(&mut commands, entity);
+            entity.remove::<(RigidBody, Collider)>();
             continue;
         }
 
@@ -121,34 +107,32 @@ fn ensure_chunk_colliders(
                 continue;
             }
 
-            let voxel_coords = if let Some(voxels) = chunk_data.voxels_arc() {
-                collect_solid_voxel_coordinates(voxels.as_ref(), sx, sy, sz)
-            } else if chunk_data.is_full() {
-                full_chunk_coordinates(sx, sy, sz)
+            let collider = if chunk_data.is_full() {
+                let size = (shape - UVec3::splat(2)).as_vec3() * CHUNK_COLLIDER_VOXEL_SIZE;
+                let center = size * 0.5 + Vec3::splat(CHUNK_COLLIDER_VOXEL_SIZE);
+                Collider::compound(vec![(
+                    center,
+                    Quat::IDENTITY,
+                    Collider::cuboid(size.x, size.y, size.z),
+                )])
             } else {
-                continue;
+                let Some(voxels) = chunk_data.voxels_arc() else {
+                    continue;
+                };
+                let coordinates = collect_solid_voxel_coordinates(voxels.as_ref(), sx, sy, sz);
+                if coordinates.is_empty() {
+                    entity.remove::<(RigidBody, Collider)>();
+                    continue;
+                }
+
+                Collider::voxels(Vec3::splat(CHUNK_COLLIDER_VOXEL_SIZE), &coordinates)
             };
-
-            if voxel_coords.is_empty() {
-                continue;
-            }
-
-            let collider = Collider::voxels(Vec3::splat(CHUNK_COLLIDER_VOXEL_SIZE), &voxel_coords);
             chunk_collider_cache.insert(voxels_hash, collider.clone());
             collider
         };
 
-        commands
-            .entity(entity)
-            .insert((RigidBody::Static, collider, ChunkColliderReady));
+        entity.insert((RigidBody::Static, collider));
     }
-}
-
-fn mark_chunk_collider_ready(commands: &mut Commands, entity: Entity) {
-    commands
-        .entity(entity)
-        .remove::<(RigidBody, Collider)>()
-        .insert(ChunkColliderReady);
 }
 
 fn collect_solid_voxel_coordinates<I: Copy + PartialEq>(
@@ -174,56 +158,8 @@ fn collect_solid_voxel_coordinates<I: Copy + PartialEq>(
     coords
 }
 
-fn full_chunk_coordinates(sx: u32, sy: u32, sz: u32) -> Vec<IVec3> {
-    let mut coords = Vec::with_capacity(interior_voxel_count(sx, sy, sz));
-
-    for z in 1..sz.saturating_sub(1) {
-        for y in 1..sy.saturating_sub(1) {
-            for x in 1..sx.saturating_sub(1) {
-                coords.push(IVec3::new(x as i32, y as i32, z as i32));
-            }
-        }
-    }
-
-    coords
-}
-
 fn interior_voxel_count(sx: u32, sy: u32, sz: u32) -> usize {
     (sx.saturating_sub(2) * sy.saturating_sub(2) * sz.saturating_sub(2)) as usize
-}
-
-fn cleanup_chunk_assets(
-    mut commands: Commands,
-    mut events: MessageReader<ChunkWillDespawn<PrototypeWorld>>,
-) {
-    for event in events.read() {
-        if let Ok(mut entity_commands) = commands.get_entity(event.entity) {
-            entity_commands.remove::<(ChunkColliderReady, Collider, RigidBody)>();
-        }
-    }
-}
-
-fn invalidate_chunk_colliders(
-    mut commands: Commands,
-    mut lod_changes: MessageReader<ChunkWillChangeLod<PrototypeWorld>>,
-    mut chunk_spawns: MessageReader<ChunkWillSpawn<PrototypeWorld>>,
-    mut dirty_entities: Local<HashSet<Entity>>,
-) {
-    dirty_entities.clear();
-
-    for event in lod_changes.read() {
-        dirty_entities.insert(event.entity);
-    }
-
-    for event in chunk_spawns.read() {
-        dirty_entities.insert(event.entity);
-    }
-
-    for entity in dirty_entities.drain() {
-        commands
-            .entity(entity)
-            .remove::<(ChunkColliderReady, Collider, RigidBody)>();
-    }
 }
 
 #[cfg(test)]

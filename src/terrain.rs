@@ -19,6 +19,7 @@ pub enum TerrainMaterial {
     Brick = 1,
     SnowBrick = 2,
     Snow = 3,
+    Emitter = 4,
 }
 
 impl TerrainMaterial {
@@ -36,6 +37,7 @@ impl TerrainMaterial {
             1 => Some(Self::Brick),
             2 => Some(Self::SnowBrick),
             3 => Some(Self::Snow),
+            4 => Some(Self::Emitter),
             _ => None,
         }
     }
@@ -50,7 +52,7 @@ impl TerrainMaterial {
             Self::Grass => [GRASS_TEXTURE, GRASS_TEXTURE, GRASS_TEXTURE],
             Self::Brick => [BRICK_TEXTURE, BRICK_TEXTURE, BRICK_TEXTURE],
             Self::SnowBrick => [SNOW_TEXTURE, SNOW_BRICK_TEXTURE, BRICK_TEXTURE],
-            Self::Snow => [SNOW_TEXTURE, SNOW_TEXTURE, SNOW_TEXTURE],
+            Self::Snow | Self::Emitter => [SNOW_TEXTURE, SNOW_TEXTURE, SNOW_TEXTURE],
         }
     }
 }
@@ -116,6 +118,14 @@ impl VoxelWorldConfig for PrototypeWorld {
 
     fn min_despawn_distance(&self) -> u32 {
         MIN_DESPAWN_DISTANCE
+    }
+
+    fn light_propagation(&self) -> Option<LightPropagation> {
+        Some(LightPropagation::default())
+    }
+
+    fn emissive_materials(&self) -> Vec<(MaterialIndex, Emission)> {
+        vec![(TerrainMaterial::Emitter.index(), Emission::level(15.0))]
     }
 
     fn voxel_texture(&self) -> Option<(String, u32)> {
@@ -213,8 +223,7 @@ fn apply_live_prototype_config(
     prototype_configs: Res<Assets<PrototypeConfig>>,
     mut prototype_config_events: MessageReader<AssetEvent<PrototypeConfig>>,
     mut prototype_world: ResMut<PrototypeWorld>,
-    mut commands: Commands,
-    chunks: Query<Entity, (With<Chunk<PrototypeWorld>>, Without<NeedsDespawn>)>,
+    mut voxel_world: VoxelWorld<PrototypeWorld>,
 ) {
     let Some(template_assets) = template_assets else {
         return;
@@ -243,9 +252,7 @@ fn apply_live_prototype_config(
 
     *prototype_world = PrototypeWorld::from_config(config.clone());
 
-    for entity in &chunks {
-        commands.entity(entity).try_insert(NeedsDespawn);
-    }
+    voxel_world.regenerate_chunks();
 
     info!(
         world_seed = config.world_seed,

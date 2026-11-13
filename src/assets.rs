@@ -1,6 +1,7 @@
 use bevy::asset::AssetEvent;
-use bevy::image::ImageAddressMode;
+use bevy::image::{ImageAddressMode, ImageSampler};
 use bevy::prelude::*;
+use bevy::render::render_resource::TextureViewDimension;
 use bevy_asset_loader::prelude::{AssetCollection, AssetCollectionApp};
 use bevy_common_assets::ron::RonAssetPlugin;
 
@@ -106,17 +107,37 @@ fn refresh_voxel_texture_on_change(
         return;
     }
 
-    let Some(mut image) = images.get_mut(&template_assets.voxel_texture) else {
+    let Some(image) = images.get(&template_assets.voxel_texture) else {
         return;
     };
+    if image.texture_descriptor.size.depth_or_array_layers == world.voxel_texture_layers()
+        && image
+            .texture_view_descriptor
+            .as_ref()
+            .and_then(|view| view.dimension)
+            == Some(TextureViewDimension::D2Array)
+        && matches!(&image.sampler, ImageSampler::Descriptor(sampler)
+            if sampler.address_mode_u == ImageAddressMode::Repeat
+                && sampler.address_mode_v == ImageAddressMode::Repeat
+                && sampler.address_mode_w == ImageAddressMode::Repeat)
+    {
+        return;
+    }
 
-    prepare_voxel_texture(&mut image, world.voxel_texture_layers());
-}
-
-fn prepare_voxel_texture(image: &mut Image, layers: u32) {
+    let layers = world.voxel_texture_layers();
+    let mut image = images.get_mut(&template_assets.voxel_texture).unwrap();
+    if image.texture_descriptor.size.depth_or_array_layers != layers
+        && let Err(error) = image.reinterpret_stacked_2d_as_array(layers)
+    {
+        warn!("Could not prepare voxel texture array: {error}");
+        return;
+    }
     let descriptor = image.sampler.get_or_init_descriptor();
     descriptor.address_mode_u = ImageAddressMode::Repeat;
     descriptor.address_mode_v = ImageAddressMode::Repeat;
     descriptor.address_mode_w = ImageAddressMode::Repeat;
-    let _ = image.reinterpret_stacked_2d_as_array(layers.max(1));
+    image
+        .texture_view_descriptor
+        .get_or_insert_default()
+        .dimension = Some(TextureViewDimension::D2Array);
 }
