@@ -4,7 +4,6 @@ use bevy::render::render_resource::{
     AsBindGroup, BlendComponent, BlendFactor, BlendOperation, BlendState, RenderPipelineDescriptor,
 };
 use bevy::shader::ShaderRef;
-use bevy::ui::FocusPolicy;
 use bevy::ui_render::ui_material::UiMaterialKey;
 use bevy::window::{CursorOptions, PrimaryWindow};
 
@@ -48,34 +47,32 @@ impl UiMaterial for CrosshairMaterial {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Clone, Default)]
 struct CrosshairRoot;
 
 fn spawn_crosshair(mut commands: Commands, mut materials: ResMut<Assets<CrosshairMaterial>>) {
-    commands
-        .spawn((
-            Name::new("Crosshair"),
-            CrosshairRoot,
-            Node {
-                position_type: PositionType::Absolute,
-                width: percent(100),
-                height: percent(100),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                ..default()
-            },
-            FocusPolicy::Pass,
-            Visibility::Hidden,
-        ))
-        .with_child((
+    let material = materials.add(CrosshairMaterial {});
+    commands.spawn_scene(bsn! {
+        Name::new("Crosshair")
+        CrosshairRoot
+        Node {
+            position_type: PositionType::Absolute,
+            width: percent(100),
+            height: percent(100),
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
+        }
+        Pickable::IGNORE
+        Visibility::Hidden
+        Children [
             Node {
                 width: px(15),
                 height: px(15),
-                ..default()
-            },
-            FocusPolicy::Pass,
-            MaterialNode(materials.add(CrosshairMaterial {})),
-        ));
+            }
+            Pickable::IGNORE
+            MaterialNode<CrosshairMaterial>(material)
+        ]
+    });
 }
 
 fn sync_crosshair_visibility(

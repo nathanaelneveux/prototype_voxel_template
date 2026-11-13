@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use avian3d::prelude::*;
+use bevy::input::InputSystems;
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::prelude::*;
 use bevy::window::{CursorOptions, PrimaryWindow};
@@ -36,6 +37,12 @@ impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_input_context::<PlayerInput>()
             .add_systems(Startup, spawn_player)
+            .add_systems(
+                PreUpdate,
+                sync_player_input
+                    .after(InputSystems)
+                    .before(EnhancedInputSystems::Prepare),
+            )
             .add_systems(
                 FixedPostUpdate,
                 (update_player_movement_speed, filter_held_jump)
@@ -94,13 +101,12 @@ fn spawn_player(mut commands: Commands, world: Res<PrototypeWorld>) {
                 Action<Movement>::new()
                 DeadZone
                 Bindings [
-                    {preset::cardinal::wasd_keys()}
-                    --
-                    {preset::cardinal::arrows()}
-                    --
-                    {preset::cardinal::dpad()}
-                    --
-                    {preset::axial::left_stick()}
+                    {(
+                        preset::cardinal::wasd_keys(),
+                        preset::cardinal::arrows(),
+                        preset::cardinal::dpad(),
+                        preset::axial::left_stick(),
+                    )}
                 ]
                 --
                 Action<Jump>::new()
@@ -166,6 +172,27 @@ fn spawn_player(mut commands: Commands, world: Res<PrototypeWorld>) {
         CharacterControllerCameraOf::new(player),
         VoxelWorldCamera::<PrototypeWorld>::default(),
     ));
+}
+
+fn sync_player_input(
+    window: Single<(&Window, &CursorOptions), With<PrimaryWindow>>,
+    player: Single<(Entity, &ContextActivity<PlayerInput>, &mut AccumulatedInput)>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    mut commands: Commands,
+) {
+    let (window, cursor) = *window;
+    let (entity, activity, mut input) = player.into_inner();
+    // Left click also recaptures the cursor. Let it go before gameplay resumes.
+    let left_click = mouse.pressed(MouseButton::Left) || mouse.just_pressed(MouseButton::Left);
+    let active = window.focused && !cursor.visible && (**activity || !left_click);
+    if **activity != active {
+        commands
+            .entity(entity)
+            .insert(ContextActivity::<PlayerInput>::new(active));
+        if !active {
+            *input = AccumulatedInput::default();
+        }
+    }
 }
 
 fn player_controller() -> CharacterController {
@@ -332,6 +359,98 @@ fn destruction_positions(center: IVec3, radius: i32) -> impl Iterator<Item = IVe
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn player_input_resumes_after_the_recapture_click_is_released() {
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            AssetPlugin::default(),
+            bevy::input::InputPlugin,
+            bevy::scene::ScenePlugin,
+            EnhancedInputPlugin,
+        ))
+        .init_resource::<PrototypeWorld>()
+        .add_input_context::<PlayerInput>()
+        .add_systems(Startup, spawn_player)
+        .add_systems(
+            PreUpdate,
+            sync_player_input
+                .after(InputSystems)
+                .before(EnhancedInputSystems::Prepare),
+        );
+        let window = app
+            .world_mut()
+            .spawn((
+                PrimaryWindow,
+                Window {
+                    focused: true,
+                    ..default()
+                },
+                CursorOptions::default(),
+            ))
+            .id();
+
+        app.finish();
+        app.cleanup();
+        app.update();
+        let world = app.world_mut();
+        let player = world
+            .query_filtered::<Entity, With<Player>>()
+            .single(world)
+            .unwrap();
+        let break_action = world
+            .query_filtered::<Entity, With<Action<BreakVoxel>>>()
+            .single(world)
+            .unwrap();
+        let active = |app: &App| {
+            **app
+                .world()
+                .get::<ContextActivity<PlayerInput>>(player)
+                .unwrap()
+        };
+        let breaking = |app: &App| {
+            app.world()
+                .get::<ActionEvents>(break_action)
+                .unwrap()
+                .contains(ActionEvents::START)
+        };
+        assert!(!active(&app));
+
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .press(MouseButton::Left);
+        app.update();
+        assert!(!breaking(&app));
+
+        app.world_mut()
+            .get_mut::<CursorOptions>(window)
+            .unwrap()
+            .visible = false;
+        app.update();
+        assert!(!active(&app));
+        assert!(!breaking(&app));
+
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .release(MouseButton::Left);
+        app.update();
+        assert!(active(&app));
+
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .press(MouseButton::Left);
+        app.update();
+        assert!(breaking(&app));
+
+        app.world_mut()
+            .get_mut::<CursorOptions>(window)
+            .unwrap()
+            .visible = true;
+        app.update();
+        assert!(!active(&app));
+        assert!(!breaking(&app));
+    }
 
     #[test]
     fn bomb_matches_the_gi_lab_sphere() {
