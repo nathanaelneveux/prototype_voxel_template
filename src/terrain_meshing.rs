@@ -15,10 +15,10 @@ use block_mesh::{
     OrientedBlockFace, QuadBuffer, RIGHT_HANDED_Y_UP_CONFIG, UnorientedQuad, Voxel,
     VoxelVisibility, ilattice::glam::Vec3 as BMVec3,
 };
-use block_mesh_bgm::{BinaryGreedyQuadsBuffer, binary_greedy_quads, binary_greedy_quads_ao_safe};
+use block_mesh_bgm::{
+    BinaryGreedyQuadsBuffer, FaceAoSampler, binary_greedy_quads, binary_greedy_quads_ao_safe,
+};
 use ndshape::{RuntimeShape, Shape};
-
-use crate::ambient_occlusion::FaceAoSampler;
 
 thread_local! {
     static BINARY_BUFFER: RefCell<BinaryGreedyQuadsBuffer> =
@@ -106,11 +106,10 @@ fn build_render_mesh(
 ) -> Mesh {
     let mut mesh = RenderMeshBuffers::with_quad_capacity(quads.num_quads());
     let voxel_size = voxel_size_from_shape(shape);
-    let voxel_strides = voxel_strides_from_shape(shape);
     let mut material_cache: MaterialTextureCache = [None; 256];
 
     for (group, face) in quads.groups.iter().zip(faces.iter().copied()) {
-        let ao_sampler = ambient_occlusion.then(|| FaceAoSampler::new(face, voxel_strides));
+        let ao_sampler = ambient_occlusion.then(|| FaceAoSampler::for_shape(face, shape));
         for quad in group {
             let ao = ao_sampler.as_ref().map(|sampler| {
                 sampler.sample(voxels, quad.minimum, |voxel| {
@@ -302,11 +301,6 @@ fn voxel_size_from_shape(shape: &RuntimeShape<u32, 3>) -> BMVec3 {
     )
 }
 
-fn voxel_strides_from_shape(shape: &RuntimeShape<u32, 3>) -> [usize; 3] {
-    let [x, y, _] = shape.as_array().map(|extent| extent as usize);
-    [1, x, x * y]
-}
-
 fn ao_vertex_color(ao_value: u8) -> [f32; 4] {
     const AO_COLORS: [[f32; 4]; 4] = [
         [0.10, 0.10, 0.10, 1.0],
@@ -316,4 +310,54 @@ fn ao_vertex_color(ao_value: u8) -> [f32; 4] {
     ];
 
     AO_COLORS[ao_value as usize]
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+
+    #[test]
+    fn ao_shades_the_occluded_corner_in_vertex_order() {
+        let shape = RuntimeShape::<u32, 3>::new([5, 4, 6]);
+        let faces = RIGHT_HANDED_Y_UP_CONFIG.faces;
+        let top_face = faces
+            .iter()
+            .position(|face| face.signed_normal().to_array() == [0, 1, 0])
+            .unwrap();
+        let minimum = [2, 1, 3];
+        let mut quads = QuadBuffer::new();
+        quads.groups[top_face].push(UnorientedQuad {
+            minimum,
+            width: 1,
+            height: 1,
+        });
+        let mut voxels = vec![WorldVoxel::Air; shape.size() as usize];
+        voxels[shape.linearize(minimum) as usize] = WorldVoxel::Solid(0);
+        // One diagonal occluder above the face, at its min-U, min-V corner.
+        voxels[shape.linearize([1, 2, 2]) as usize] = WorldVoxel::Solid(0);
+
+        let texture_mapper: TextureIndexMapperFn<u8> = Arc::new(|_| [0; 3]);
+        for ambient_occlusion in [false, true] {
+            let mesh = build_render_mesh(
+                &quads,
+                &faces,
+                &voxels,
+                &shape,
+                &texture_mapper,
+                ambient_occlusion,
+            );
+            let mut expected = [DEFAULT_VERTEX_COLOR; 4];
+            if ambient_occlusion {
+                expected[0] = [0.5, 0.5, 0.5, 1.0];
+            }
+            let Some(VertexAttributeValues::Float32x4(colors)) =
+                mesh.attribute(Mesh::ATTRIBUTE_COLOR)
+            else {
+                panic!("expected float4 vertex colors");
+            };
+            assert_eq!(colors.as_slice(), &expected);
+        }
+    }
 }

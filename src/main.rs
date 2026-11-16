@@ -1,4 +1,3 @@
-mod ambient_occlusion;
 mod app_controls;
 mod assets;
 mod chunk_colliders;
