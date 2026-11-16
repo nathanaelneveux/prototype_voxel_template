@@ -15,6 +15,18 @@
 - `bevy_asset_loader` and `bevy_common_assets` wired in from the start
 - Hot-reloadable prototype config and voxel texture
 
+## Bevy compatibility
+
+Pick the template tag for your Bevy version. The table shows the exact versions in each tag's `Cargo.lock`.
+
+| Template tag | Bevy | `bevy_ahoy` |
+| --- | --- | --- |
+| [`v0.3.0`](https://github.com/nathanaelneveux/prototype_voxel_template/releases/tag/v0.3.0) | 0.20.1 | 0.3.0 |
+| [`v0.2.0`](https://github.com/nathanaelneveux/prototype_voxel_template/tree/v0.2.0) | 0.19.1 | 0.2.0 |
+| [`v0.1.0`](https://github.com/nathanaelneveux/prototype_voxel_template/tree/v0.1.0) | 0.18.1 | 0.1.0 |
+
+The two older tags point to the last `main` commit before the next Bevy upgrade, without changing the historical files. Follow the README at your chosen tag and use Cargo's `--locked` flag to keep its dependency versions.
+
 ## Run
 
 Use Rust 1.97.1 or newer.
