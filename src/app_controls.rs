@@ -3,7 +3,8 @@ use bevy::pbr::wireframe::{WireframeConfig, WireframePlugin};
 use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow, Window};
 use bevy_enhanced_input::prelude::{
-    Action, ActionEvents, EnhancedInputSystems, InputAction, InputContextAppExt, actions, bindings,
+    Action, ActionEvents, Actions, Binding, Bindings, EnhancedInputSystems, InputAction,
+    InputContextAppExt,
 };
 use bevy_inspector_egui::{bevy_egui::EguiPlugin, quick::WorldInspectorPlugin};
 
@@ -47,7 +48,7 @@ struct CursorLockState {
     ignore_next_motion: bool,
 }
 
-#[derive(Component, Default)]
+#[derive(Component, Clone, Default)]
 struct AppInput;
 
 #[derive(InputAction)]
@@ -76,24 +77,20 @@ impl CursorLockState {
 }
 
 fn spawn_app_input(mut commands: Commands) {
-    commands.spawn((
-        Name::new("AppInput"),
-        AppInput,
-        actions!(AppInput[
-            (
-                Action::<ToggleInspectorMode>::new(),
-                bindings![KeyCode::Escape],
-            ),
-            (
-                Action::<ToggleMeshDebugOverlay>::new(),
-                bindings![KeyCode::F3],
-            ),
-            (
-                Action::<RecaptureCursor>::new(),
-                bindings![MouseButton::Left],
-            ),
-        ]),
-    ));
+    commands.spawn_scene(bsn! {
+        Name::new("AppInput")
+        AppInput
+        Actions<AppInput> [
+            Action<ToggleInspectorMode>::new()
+            Bindings [Binding(KeyCode::Escape)]
+            --
+            Action<ToggleMeshDebugOverlay>::new()
+            Bindings [Binding(KeyCode::F3)]
+            --
+            Action<RecaptureCursor>::new()
+            Bindings [Binding(MouseButton::Left)]
+        ]
+    });
 }
 
 fn lock_cursor(

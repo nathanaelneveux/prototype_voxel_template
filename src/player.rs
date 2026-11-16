@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use avian3d::prelude::*;
+use bevy::input::InputSystems;
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::prelude::*;
 use bevy::window::{CursorOptions, PrimaryWindow};
@@ -28,6 +29,7 @@ const PLAYER_STEP_SIZE: f32 = 0.55;
 const PLAYER_MAX_SPEED: f32 = 80.0;
 const PLAYER_AIR_ACCELERATION_HZ: f32 = 8.0;
 const PLAYER_MAX_AIR_WISH_SPEED: f32 = 0.35;
+const BOMB_RADIUS: i32 = 5;
 
 pub struct PlayerPlugin;
 
@@ -35,6 +37,12 @@ impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_input_context::<PlayerInput>()
             .add_systems(Startup, spawn_player)
+            .add_systems(
+                PreUpdate,
+                sync_player_input
+                    .after(InputSystems)
+                    .before(EnhancedInputSystems::Prepare),
+            )
             .add_systems(
                 FixedPostUpdate,
                 (update_player_movement_speed, filter_held_jump)
@@ -45,16 +53,16 @@ impl Plugin for PlayerPlugin {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Clone, Default)]
 struct Player;
 
-#[derive(Component, Default)]
+#[derive(Component, Clone, Default)]
 struct PlayerInput;
 
 #[derive(Component)]
 struct PlayerCamera;
 
-#[derive(Component, Default)]
+#[derive(Component, Clone, Default)]
 struct HeldJumpFilter {
     was_grounded: bool,
 }
@@ -71,64 +79,82 @@ struct BreakVoxel;
 #[action_output(bool)]
 struct PlaceVoxel;
 
+#[derive(InputAction)]
+#[action_output(bool)]
+struct PlaceEmitter;
+
+#[derive(InputAction)]
+#[action_output(bool)]
+struct DetonateBomb;
+
 fn spawn_player(mut commands: Commands, world: Res<PrototypeWorld>) {
+    let spawn_position = world.player_spawn_position();
     let player = commands
-        .spawn((
-            Name::new("Player"),
-            Player,
-            PlayerInput,
-            HeldJumpFilter::default(),
-            player_controller(),
-            Collider::cylinder(PLAYER_RADIUS, PLAYER_HEIGHT),
-            Transform::from_translation(world.player_spawn_position()),
-            actions!(PlayerInput[
-                (
-                    Action::<Movement>::new(),
-                    DeadZone::default(),
-                    Bindings::spawn((
-                        Cardinal::wasd_keys(),
-                        Cardinal::arrows(),
-                        Cardinal::dpad(),
-                        Axial::left_stick(),
-                    )),
-                ),
-                (
-                    Action::<Jump>::new(),
-                    bindings![KeyCode::Space, GamepadButton::North],
-                ),
-                (
-                    Action::<Crouch>::new(),
-                    bindings![
-                        KeyCode::ControlLeft,
-                        KeyCode::ControlRight,
-                        GamepadButton::LeftThumb,
-                    ],
-                ),
-                (
-                    Action::<Sprint>::new(),
-                    bindings![
-                        KeyCode::ShiftLeft,
-                        KeyCode::ShiftRight,
-                        GamepadButton::West,
-                    ],
-                ),
-                (
-                    Action::<BreakVoxel>::new(),
-                    bindings![MouseButton::Left, GamepadButton::South],
-                ),
-                (
-                    Action::<PlaceVoxel>::new(),
-                    bindings![MouseButton::Right, GamepadButton::East],
-                ),
-                (
-                    Action::<RotateCamera>::new(),
-                    Bindings::spawn((
-                        Spawn((Binding::mouse_motion(), Scale::splat(0.08))),
-                        Axial::right_stick().with(Scale::splat(2.5)),
-                    )),
-                ),
-            ]),
-        ))
+        .spawn_scene(bsn! {
+            Name::new("Player")
+            Player
+            PlayerInput
+            HeldJumpFilter
+            Collider::cylinder(PLAYER_RADIUS, PLAYER_HEIGHT)
+            Transform::from_translation(spawn_position)
+            Actions<PlayerInput> [
+                Action<Movement>::new()
+                DeadZone
+                Bindings [
+                    {(
+                        preset::cardinal::wasd_keys(),
+                        preset::cardinal::arrows(),
+                        preset::cardinal::dpad(),
+                        preset::axial::left_stick(),
+                    )}
+                ]
+                --
+                Action<Jump>::new()
+                Bindings [Binding(KeyCode::Space) -- Binding(GamepadButton::North)]
+                --
+                Action<Crouch>::new()
+                Bindings [
+                    Binding(KeyCode::ControlLeft)
+                    --
+                    Binding(KeyCode::ControlRight)
+                    --
+                    Binding(GamepadButton::LeftThumb)
+                ]
+                --
+                Action<Sprint>::new()
+                Bindings [
+                    Binding(KeyCode::ShiftLeft)
+                    --
+                    Binding(KeyCode::ShiftRight)
+                    --
+                    Binding(GamepadButton::West)
+                ]
+                --
+                Action<BreakVoxel>::new()
+                Bindings [Binding(MouseButton::Left) -- Binding(GamepadButton::South)]
+                --
+                Action<PlaceVoxel>::new()
+                Bindings [Binding(MouseButton::Right) -- Binding(GamepadButton::East)]
+                --
+                Action<PlaceEmitter>::new()
+                Bindings [Binding(KeyCode::KeyE)]
+                --
+                Action<DetonateBomb>::new()
+                Bindings [Binding(KeyCode::KeyB)]
+                --
+                Action<RotateCamera>::new()
+                Bindings [
+                    Binding::mouse_motion()
+                    ~Scale::splat(0.08)
+                    --
+                    {preset::axial::new(
+                        (GamepadAxis::RightStickX, Scale::splat(2.5)),
+                        (GamepadAxis::RightStickY, Scale::splat(2.5)),
+                    )}
+                ]
+            ]
+        })
+        .insert(player_controller())
         .id();
 
     commands.spawn((
@@ -146,6 +172,27 @@ fn spawn_player(mut commands: Commands, world: Res<PrototypeWorld>) {
         CharacterControllerCameraOf::new(player),
         VoxelWorldCamera::<PrototypeWorld>::default(),
     ));
+}
+
+fn sync_player_input(
+    window: Single<(&Window, &CursorOptions), With<PrimaryWindow>>,
+    player: Single<(Entity, &ContextActivity<PlayerInput>, &mut AccumulatedInput)>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    mut commands: Commands,
+) {
+    let (window, cursor) = *window;
+    let (entity, activity, mut input) = player.into_inner();
+    // Left click also recaptures the cursor. Let it go before gameplay resumes.
+    let left_click = mouse.pressed(MouseButton::Left) || mouse.just_pressed(MouseButton::Left);
+    let active = window.focused && !cursor.visible && (**activity || !left_click);
+    if **activity != active {
+        commands
+            .entity(entity)
+            .insert(ContextActivity::<PlayerInput>::new(active));
+        if !active {
+            *input = AccumulatedInput::default();
+        }
+    }
 }
 
 fn player_controller() -> CharacterController {
@@ -244,14 +291,27 @@ fn reset_player_to_world_spawn(
 fn edit_voxels(
     break_events: Single<&ActionEvents, With<Action<BreakVoxel>>>,
     place_events: Single<&ActionEvents, With<Action<PlaceVoxel>>>,
+    emitter_events: Single<&ActionEvents, With<Action<PlaceEmitter>>>,
+    bomb_events: Single<&ActionEvents, With<Action<DetonateBomb>>>,
     cursor_options: Single<&CursorOptions, With<PrimaryWindow>>,
     camera: Single<&GlobalTransform, (With<PlayerCamera>, Without<Player>)>,
     mut voxel_world: VoxelWorld<PrototypeWorld>,
 ) {
-    let breaking = break_events.contains(ActionEvents::START);
-    let placing = place_events.contains(ActionEvents::START);
+    if cursor_options.visible {
+        return;
+    }
 
-    if cursor_options.visible || (!breaking && !placing) {
+    let breaking = break_events.contains(ActionEvents::START);
+    let bombing = bomb_events.contains(ActionEvents::START);
+    let placement = if emitter_events.contains(ActionEvents::START) {
+        Some(TerrainMaterial::Emitter)
+    } else if place_events.contains(ActionEvents::START) {
+        Some(TerrainMaterial::Grass)
+    } else {
+        None
+    };
+
+    if !breaking && !bombing && placement.is_none() {
         return;
     }
 
@@ -261,12 +321,16 @@ fn edit_voxels(
         return;
     };
 
-    if breaking {
-        let edited_position = hit.position.as_ivec3();
-        voxel_world.set_voxel(edited_position, WorldVoxel::Air);
+    if breaking || bombing {
+        let radius = if bombing { BOMB_RADIUS } else { 0 };
+        for position in destruction_positions(hit.position.as_ivec3(), radius) {
+            if matches!(voxel_world.get_voxel(position), WorldVoxel::Solid(_)) {
+                voxel_world.set_voxel(position, WorldVoxel::Air);
+            }
+        }
     }
 
-    if placing {
+    if let Some(material) = placement {
         let Some(normal) = hit.normal else {
             return;
         };
@@ -276,7 +340,127 @@ fn edit_voxels(
             voxel_world.get_voxel(placement_position),
             WorldVoxel::Air | WorldVoxel::Unset
         ) {
-            voxel_world.set_voxel(placement_position, TerrainMaterial::Grass.voxel());
+            voxel_world.set_voxel(placement_position, material.voxel());
         }
+    }
+}
+
+fn destruction_positions(center: IVec3, radius: i32) -> impl Iterator<Item = IVec3> {
+    (-radius..=radius).flat_map(move |x| {
+        (-radius..=radius).flat_map(move |y| {
+            (-radius..=radius).filter_map(move |z| {
+                let offset = IVec3::new(x, y, z);
+                (offset.length_squared() <= radius * radius).then_some(center + offset)
+            })
+        })
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn player_input_resumes_after_the_recapture_click_is_released() {
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            AssetPlugin::default(),
+            bevy::input::InputPlugin,
+            bevy::scene::ScenePlugin,
+            EnhancedInputPlugin,
+        ))
+        .init_resource::<PrototypeWorld>()
+        .add_input_context::<PlayerInput>()
+        .add_systems(Startup, spawn_player)
+        .add_systems(
+            PreUpdate,
+            sync_player_input
+                .after(InputSystems)
+                .before(EnhancedInputSystems::Prepare),
+        );
+        let window = app
+            .world_mut()
+            .spawn((
+                PrimaryWindow,
+                Window {
+                    focused: true,
+                    ..default()
+                },
+                CursorOptions::default(),
+            ))
+            .id();
+
+        app.finish();
+        app.cleanup();
+        app.update();
+        let world = app.world_mut();
+        let player = world
+            .query_filtered::<Entity, With<Player>>()
+            .single(world)
+            .unwrap();
+        let break_action = world
+            .query_filtered::<Entity, With<Action<BreakVoxel>>>()
+            .single(world)
+            .unwrap();
+        let active = |app: &App| {
+            **app
+                .world()
+                .get::<ContextActivity<PlayerInput>>(player)
+                .unwrap()
+        };
+        let breaking = |app: &App| {
+            app.world()
+                .get::<ActionEvents>(break_action)
+                .unwrap()
+                .contains(ActionEvents::START)
+        };
+        assert!(!active(&app));
+
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .press(MouseButton::Left);
+        app.update();
+        assert!(!breaking(&app));
+
+        app.world_mut()
+            .get_mut::<CursorOptions>(window)
+            .unwrap()
+            .visible = false;
+        app.update();
+        assert!(!active(&app));
+        assert!(!breaking(&app));
+
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .release(MouseButton::Left);
+        app.update();
+        assert!(active(&app));
+
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .press(MouseButton::Left);
+        app.update();
+        assert!(breaking(&app));
+
+        app.world_mut()
+            .get_mut::<CursorOptions>(window)
+            .unwrap()
+            .visible = true;
+        app.update();
+        assert!(!active(&app));
+        assert!(!breaking(&app));
+    }
+
+    #[test]
+    fn bomb_matches_the_gi_lab_sphere() {
+        let center = IVec3::new(-32, 17, 64);
+        let targets: std::collections::HashSet<_> =
+            destruction_positions(center, BOMB_RADIUS).collect();
+        assert_eq!(targets.len(), 515);
+        assert!(targets.contains(&center));
+        assert!(targets.contains(&(center + IVec3::X * 5)));
+        assert!(!targets.contains(&(center + IVec3::X * 6)));
+        assert!(targets.iter().all(|p| (*p - center).length_squared() <= 25));
     }
 }

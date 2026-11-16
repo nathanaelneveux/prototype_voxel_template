@@ -2,6 +2,7 @@ mod ambient_occlusion;
 mod app_controls;
 mod assets;
 mod chunk_colliders;
+mod crosshair;
 mod player;
 mod terrain;
 mod terrain_meshing;
@@ -19,6 +20,7 @@ use bevy_ahoy::prelude::AhoyPlugins;
 use bevy_enhanced_input::prelude::EnhancedInputPlugin;
 
 use chunk_colliders::ChunkColliderPlugin;
+use crosshair::CrosshairPlugin;
 use player::PlayerPlugin;
 use terrain::TerrainPlugin;
 use world_environment::WorldEnvironmentPlugin;
@@ -29,7 +31,6 @@ fn main() {
             DefaultPlugins
                 .set(AssetPlugin {
                     meta_check: AssetMetaCheck::Never,
-                    watch_for_changes_override: Some(true),
                     ..default()
                 })
                 .set(RenderPlugin {
@@ -55,6 +56,7 @@ fn main() {
             TerrainPlugin,
             ChunkColliderPlugin,
             PlayerPlugin,
+            CrosshairPlugin,
         ))
         .run();
 }
