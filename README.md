@@ -9,6 +9,7 @@
 - Ambient occlusion-ready voxel shading
 - Propagated sky light and light from emissive voxels
 - First-person player controller using `bevy_ahoy`
+- Bevy UI crosshair that inverts the scene color beneath it
 - Chunk collider generation with caching for solid terrain
 - `bevy-inspector-egui` on an `Esc` toggle
 - `bevy_asset_loader` and `bevy_common_assets` wired in from the start
@@ -20,6 +21,12 @@ Use Rust 1.97.1 or newer.
 
 ```bash
 cargo run
+```
+
+For an optimized build without the development features:
+
+```bash
+cargo run --release --locked --no-default-features
 ```
 
 ## Controls

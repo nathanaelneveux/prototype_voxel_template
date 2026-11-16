@@ -488,8 +488,9 @@ dependencies = [
 
 [[package]]
 name = "avian_pickup"
-version = "0.6.0"
-source = "git+https://github.com/brookman/avian_pickup/#51a761c10323fe36195d57550ed7dd5df3fc2425"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6afafe5096c398f004b3c7e8edc2937196cd185f7c009a7db23137c568bb504f"
 dependencies = [
  "avian3d",
  "bevy_app",
@@ -587,18 +588,19 @@ dependencies = [
 
 [[package]]
 name = "bevy_ahoy"
-version = "0.2.0"
-source = "git+https://github.com/valeenalabs/bevy_ahoy?rev=4c161090e75d28d458822a65f91665f1dd94c8e6#4c161090e75d28d458822a65f91665f1dd94c8e6"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5679d8453717442765fe3e4e475561e1f8c9b2567be3a0234e21679340436aee"
 dependencies = [
  "avian3d",
  "avian_pickup",
- "bevy",
  "bevy_app",
  "bevy_derive",
  "bevy_ecs",
  "bevy_enhanced_input",
  "bevy_math",
  "bevy_reflect",
+ "bevy_shape",
  "bevy_time",
  "bevy_transform",
  "bevy_utils",
@@ -2364,9 +2366,9 @@ dependencies = [
 
 [[package]]
 name = "block-mesh-bgm"
-version = "0.2.4"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aff706670c34323aa8afc2d0dd0f53d96dd9feba189d88b161de7ef2668c0d1a"
+checksum = "b5b74eae511eda2759a7a0c8560953926bbb067850af63ac64567e6175703a90"
 dependencies = [
  "block-mesh",
  "ndshape",

@@ -31,7 +31,6 @@ fn main() {
             DefaultPlugins
                 .set(AssetPlugin {
                     meta_check: AssetMetaCheck::Never,
-                    watch_for_changes_override: Some(true),
                     ..default()
                 })
                 .set(RenderPlugin {
