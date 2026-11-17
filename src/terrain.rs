@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use bevy::asset::AssetEvent;
 use bevy::prelude::*;
-use bevy_voxel_world::custom_meshing::{CHUNK_SIZE_F, CHUNK_SIZE_I};
+use bevy_voxel_world::custom_meshing::{CHUNK_SIZE_F, scale_texture_coordinates};
 use bevy_voxel_world::prelude::*;
 
 use crate::assets::{PrototypeConfig, TemplateAssets};
@@ -64,6 +64,9 @@ const MIN_DESPAWN_DISTANCE: u32 = 2;
 
 pub struct TerrainPlugin;
 
+#[derive(Event)]
+pub(crate) struct TerrainRegenerationRequested;
+
 impl Plugin for TerrainPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(VoxelWorldPlugin::with_config(PrototypeWorld::default()))
@@ -102,10 +105,6 @@ impl PrototypeWorld {
     pub fn voxel_texture_layers(&self) -> u32 {
         self.config.voxel_texture_layers
     }
-
-    fn matches_config(&self, config: &PrototypeConfig) -> bool {
-        &self.config == config
-    }
 }
 
 impl VoxelWorldConfig for PrototypeWorld {
@@ -121,7 +120,17 @@ impl VoxelWorldConfig for PrototypeWorld {
     }
 
     fn light_propagation(&self) -> Option<LightPropagation> {
-        Some(LightPropagation::default())
+        Some(LightPropagation {
+            look: LightLook {
+                ao: if self.config.ambient_occlusion {
+                    LightAo::IndirectLight
+                } else {
+                    LightAo::Off
+                },
+                ..default()
+            },
+            ..default()
+        })
     }
 
     fn emissive_materials(&self) -> Vec<(MaterialIndex, Emission)> {
@@ -142,24 +151,16 @@ impl VoxelWorldConfig for PrototypeWorld {
     fn voxel_lookup_delegate(&self) -> VoxelLookupDelegate<Self::MaterialIndex> {
         let terrain_noise = Arc::clone(&self.noise);
 
-        Box::new(move |chunk_pos, _lod, _previous| {
-            let chunk_min_y = chunk_pos.y * CHUNK_SIZE_I;
-            let chunk_max_y = chunk_min_y + CHUNK_SIZE_I - 1;
-
-            if chunk_max_y < BEDROCK_FLOOR_Y {
-                return Box::new(|_, _| TerrainMaterial::Brick.voxel());
-            }
-
-            if chunk_min_y > MAX_SURFACE_Y + 1 {
-                return Box::new(|_, _| WorldVoxel::Air);
-            }
-
+        Box::new(move |_, _, _| {
             let mut column_cache = HashMap::<(i32, i32), TerrainColumn>::new();
             let noise = Arc::clone(&terrain_noise);
 
             Box::new(move |pos: IVec3, _previous| {
                 if pos.y <= BEDROCK_FLOOR_Y {
                     return TerrainMaterial::Brick.voxel();
+                }
+                if pos.y > MAX_SURFACE_Y {
+                    return WorldVoxel::Air;
                 }
 
                 let column = *column_cache
@@ -171,18 +172,12 @@ impl VoxelWorldConfig for PrototypeWorld {
                 }
 
                 let depth = column.surface_y - pos.y;
-                let material = if depth == 0 {
-                    if column.surface_y <= WATERLINE_Y {
-                        TerrainMaterial::Snow
-                    } else {
-                        TerrainMaterial::Grass
-                    }
+                let material = if depth <= column.soil_depth && column.surface_y <= WATERLINE_Y {
+                    TerrainMaterial::Snow
+                } else if depth == 0 {
+                    TerrainMaterial::Grass
                 } else if depth <= column.soil_depth {
-                    if column.surface_y <= WATERLINE_Y {
-                        TerrainMaterial::Snow
-                    } else {
-                        TerrainMaterial::SnowBrick
-                    }
+                    TerrainMaterial::SnowBrick
                 } else {
                     TerrainMaterial::Brick
                 };
@@ -195,30 +190,22 @@ impl VoxelWorldConfig for PrototypeWorld {
     fn chunk_meshing_delegate(
         &self,
     ) -> ChunkMeshingDelegate<Self::MaterialIndex, Self::ChunkUserBundle> {
-        let ambient_occlusion = self.config.ambient_occlusion;
-
-        Some(Box::new(
-            move |_pos, _lod, _data_shape, _mesh_shape, _previous| {
-                Box::new(
-                    move |voxels, data_shape, mesh_shape, texture_index_mapper| {
-                        (
-                            build_chunk_mesh(
-                                voxels,
-                                data_shape,
-                                mesh_shape,
-                                texture_index_mapper,
-                                ambient_occlusion,
-                            ),
-                            None,
-                        )
-                    },
-                )
-            },
-        ))
+        Some(Box::new(|_, lod, _, _, _| {
+            Box::new(
+                move |voxels, data_shape, mesh_shape, texture_index_mapper| {
+                    let mut mesh =
+                        build_chunk_mesh(voxels, data_shape, mesh_shape, texture_index_mapper);
+                    // BVW scales the positions; keep texture density in world units too.
+                    scale_texture_coordinates(&mut mesh, (1 << lod) as f32);
+                    (mesh, None)
+                },
+            )
+        }))
     }
 }
 
 fn apply_live_prototype_config(
+    mut commands: Commands,
     template_assets: Option<Res<TemplateAssets>>,
     prototype_configs: Res<Assets<PrototypeConfig>>,
     mut prototype_config_events: MessageReader<AssetEvent<PrototypeConfig>>,
@@ -246,13 +233,24 @@ fn apply_live_prototype_config(
         return;
     };
 
-    if prototype_world.matches_config(config) {
+    let previous = &prototype_world.config;
+    if previous == config {
         return;
     }
 
-    *prototype_world = PrototypeWorld::from_config(config.clone());
-
-    voxel_world.regenerate_chunks();
+    let ao_only = *config
+        == (PrototypeConfig {
+            ambient_occlusion: config.ambient_occlusion,
+            ..previous.clone()
+        });
+    if ao_only {
+        // BVW watches the world config and updates the light look without remeshing.
+        prototype_world.config.ambient_occlusion = config.ambient_occlusion;
+    } else {
+        *prototype_world = PrototypeWorld::from_config(config.clone());
+        voxel_world.regenerate_chunks();
+        commands.trigger(TerrainRegenerationRequested);
+    }
 
     info!(
         world_seed = config.world_seed,

@@ -10,7 +10,9 @@ use bevy_ahoy::prelude::*;
 use bevy_enhanced_input::prelude::*;
 use bevy_voxel_world::prelude::{VoxelWorld, VoxelWorldCamera, WorldVoxel};
 
-use crate::terrain::{PrototypeWorld, TERRAIN_VIEW_DISTANCE, TerrainMaterial};
+use crate::terrain::{
+    PrototypeWorld, TERRAIN_VIEW_DISTANCE, TerrainMaterial, TerrainRegenerationRequested,
+};
 use crate::world_environment::sky_color;
 
 const FOG_START: f32 = 96.0;
@@ -49,7 +51,8 @@ impl Plugin for PlayerPlugin {
                     .chain()
                     .before(AhoySystems::MoveCharacters),
             )
-            .add_systems(Update, (edit_voxels, reset_player_to_world_spawn));
+            .add_systems(Update, edit_voxels)
+            .add_observer(reset_player_to_world_spawn);
     }
 }
 
@@ -250,36 +253,22 @@ fn filter_held_jump(
         With<Player>,
     >,
 ) {
-    let jump = jump.into_inner();
-
     let (state, input, filter) = &mut *player;
-    let holding_jump = **jump;
+    let grounded = state.grounded.is_some();
 
-    if !holding_jump {
-        filter.was_grounded = state.grounded.is_some();
-        return;
-    }
-
-    if state.grounded.is_none() {
-        filter.was_grounded = false;
-        return;
-    }
-
-    if !filter.was_grounded {
+    // Ahoy jumps before it applies ground movement. Give a held jump one
+    // grounded tick after landing so movement can build speed between hops.
+    if ***jump && grounded && !filter.was_grounded {
         input.jumped = None;
     }
-
-    filter.was_grounded = true;
+    filter.was_grounded = grounded;
 }
 
 fn reset_player_to_world_spawn(
+    _: On<TerrainRegenerationRequested>,
     world: Res<PrototypeWorld>,
     mut player: Single<(&mut Transform, Option<&mut LinearVelocity>), With<Player>>,
 ) {
-    if !world.is_changed() {
-        return;
-    }
-
     let (transform, velocity) = &mut *player;
     transform.translation = world.player_spawn_position();
 

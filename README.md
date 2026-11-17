@@ -68,6 +68,8 @@ Current runtime config includes:
 - `ambient_occlusion`
 
 The config file and `assets/example_voxel_texture.png` are set up for hot reload during development.
+`ambient_occlusion` switches the visible corner shading live through BVW's lighting settings.
+BGM keeps the same AO-safe geometry in either mode, so toggling it does not rebuild chunks.
 
 ## Why This Exists
 

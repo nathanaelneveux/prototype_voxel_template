@@ -15,17 +15,13 @@ use block_mesh::{
     OrientedBlockFace, QuadBuffer, RIGHT_HANDED_Y_UP_CONFIG, UnorientedQuad, Voxel,
     VoxelVisibility, ilattice::glam::Vec3 as BMVec3,
 };
-use block_mesh_bgm::{
-    BinaryGreedyQuadsBuffer, FaceAoSampler, binary_greedy_quads, binary_greedy_quads_ao_safe,
-};
+use block_mesh_bgm::{BinaryGreedyQuadsBuffer, FaceAoSampler, binary_greedy_quads_ao_safe};
 use ndshape::{RuntimeShape, Shape};
 
 thread_local! {
     static BINARY_BUFFER: RefCell<BinaryGreedyQuadsBuffer> =
         RefCell::new(BinaryGreedyQuadsBuffer::new());
 }
-
-const DEFAULT_VERTEX_COLOR: [f32; 4] = [1.0; 4];
 
 type MaterialTextureCache = [Option<[u32; 3]>; 256];
 
@@ -34,7 +30,6 @@ pub fn build_chunk_mesh(
     data_shape_extent: UVec3,
     mesh_shape_extent: UVec3,
     texture_index_mapper: TextureIndexMapperFn<u8>,
-    ambient_occlusion: bool,
 ) -> Mesh {
     let data_shape_extent = padded_chunk_shape_or_default(data_shape_extent);
     let mesh_shape_extent = padded_chunk_shape_or_default(mesh_shape_extent);
@@ -57,25 +52,14 @@ pub fn build_chunk_mesh(
     BINARY_BUFFER.with(|buffer| {
         let mut buffer = buffer.borrow_mut();
 
-        if ambient_occlusion {
-            binary_greedy_quads_ao_safe(
-                voxels_for_mesh.as_ref(),
-                &mesh_shape,
-                [0; 3],
-                max,
-                &faces,
-                &mut buffer,
-            );
-        } else {
-            binary_greedy_quads(
-                voxels_for_mesh.as_ref(),
-                &mesh_shape,
-                [0; 3],
-                max,
-                &faces,
-                &mut buffer,
-            );
-        }
+        binary_greedy_quads_ao_safe(
+            voxels_for_mesh.as_ref(),
+            &mesh_shape,
+            [0; 3],
+            max,
+            &faces,
+            &mut buffer,
+        );
 
         build_render_mesh(
             &buffer.quads,
@@ -83,7 +67,6 @@ pub fn build_chunk_mesh(
             voxels_for_mesh.as_ref(),
             &mesh_shape,
             &texture_index_mapper,
-            ambient_occlusion,
         )
     })
 }
@@ -102,19 +85,16 @@ fn build_render_mesh(
     voxels: &[WorldVoxel<u8>],
     shape: &RuntimeShape<u32, 3>,
     texture_index_mapper: &TextureIndexMapperFn<u8>,
-    ambient_occlusion: bool,
 ) -> Mesh {
     let mut mesh = RenderMeshBuffers::with_quad_capacity(quads.num_quads());
     let voxel_size = voxel_size_from_shape(shape);
     let mut material_cache: MaterialTextureCache = [None; 256];
 
     for (group, face) in quads.groups.iter().zip(faces.iter().copied()) {
-        let ao_sampler = ambient_occlusion.then(|| FaceAoSampler::for_shape(face, shape));
+        let ao_sampler = FaceAoSampler::for_shape(face, shape);
         for quad in group {
-            let ao = ao_sampler.as_ref().map(|sampler| {
-                sampler.sample(voxels, quad.minimum, |voxel| {
-                    voxel.get_visibility() == VoxelVisibility::Opaque
-                })
+            let ao = ao_sampler.sample(voxels, quad.minimum, |voxel| {
+                voxel.get_visibility() == VoxelVisibility::Opaque
             });
             mesh.append_quad(
                 face,
@@ -163,7 +143,7 @@ impl RenderMeshBuffers {
         voxel_size: BMVec3,
         texture_index_mapper: &TextureIndexMapperFn<u8>,
         material_cache: &mut MaterialTextureCache,
-        ao: Option<[u8; 4]>,
+        ao: [u8; 4],
     ) {
         self.indices
             .extend_from_slice(&face.quad_mesh_indices(self.positions.len() as u32));
@@ -202,12 +182,7 @@ impl RenderMeshBuffers {
         };
         self.material_types.extend(std::iter::repeat_n(material, 4));
 
-        if let Some(ao) = ao {
-            self.colors.extend(ao.map(ao_vertex_color));
-        } else {
-            self.colors
-                .extend(std::iter::repeat_n(DEFAULT_VERTEX_COLOR, 4));
-        }
+        self.colors.extend(ao.map(ao_vertex_color));
     }
 
     fn build(self) -> Mesh {
@@ -339,25 +314,14 @@ mod tests {
         voxels[shape.linearize([1, 2, 2]) as usize] = WorldVoxel::Solid(0);
 
         let texture_mapper: TextureIndexMapperFn<u8> = Arc::new(|_| [0; 3]);
-        for ambient_occlusion in [false, true] {
-            let mesh = build_render_mesh(
-                &quads,
-                &faces,
-                &voxels,
-                &shape,
-                &texture_mapper,
-                ambient_occlusion,
-            );
-            let mut expected = [DEFAULT_VERTEX_COLOR; 4];
-            if ambient_occlusion {
-                expected[0] = [0.5, 0.5, 0.5, 1.0];
-            }
-            let Some(VertexAttributeValues::Float32x4(colors)) =
-                mesh.attribute(Mesh::ATTRIBUTE_COLOR)
-            else {
-                panic!("expected float4 vertex colors");
-            };
-            assert_eq!(colors.as_slice(), &expected);
-        }
+        let mesh = build_render_mesh(&quads, &faces, &voxels, &shape, &texture_mapper);
+        let Some(VertexAttributeValues::Float32x4(colors)) = mesh.attribute(Mesh::ATTRIBUTE_COLOR)
+        else {
+            panic!("expected float4 vertex colors");
+        };
+        assert_eq!(
+            colors.as_slice(),
+            &[[0.5, 0.5, 0.5, 1.0], [1.0; 4], [1.0; 4], [1.0; 4]]
+        );
     }
 }
